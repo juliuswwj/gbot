@@ -19,33 +19,35 @@ class DnsmasqManager:
                 for line in f:
                     line = line.strip()
                     if line.startswith("dhcp-host="):
-                        # Format: dhcp-host=MAC,IP,NAME
-                        match = re.match(r"dhcp-host=([^,]+),([^,]+),([^,]+)", line)
+                        # Format: dhcp-host=MAC,[set:TAG,]IP,NAME
+                        # Improved regex to capture optional tag
+                        match = re.search(r"dhcp-host=([^,]+),(?:set:([^,]+),)?([^,]+),([^,]+)", line)
                         if match:
                             hosts.append({
                                 "mac": match.group(1),
-                                "ip": match.group(2),
-                                "name": match.group(3)
+                                "tag": match.group(2) if match.group(2) else "none",
+                                "ip": match.group(3),
+                                "name": match.group(4)
                             })
         except Exception as e:
             logger.error(f"Error reading dnsmasq config: {e}")
         return hosts
 
-    def update_host(self, mac, ip, name):
-        """Add or update a dhcp-host entry."""
+    def update_host(self, mac, ip, name, tag=None):
+        """Add or update a dhcp-host entry with optional tag."""
         hosts = self.get_hosts()
         updated = False
         new_hosts = []
         
         for h in hosts:
             if h["mac"].lower() == mac.lower():
-                new_hosts.append({"mac": mac, "ip": ip, "name": name})
+                new_hosts.append({"mac": mac, "ip": ip, "name": name, "tag": tag})
                 updated = True
             else:
                 new_hosts.append(h)
         
         if not updated:
-            new_hosts.append({"mac": mac, "ip": ip, "name": name})
+            new_hosts.append({"mac": mac, "ip": ip, "name": name, "tag": tag})
             
         self._save_hosts(new_hosts)
         self.reload_dnsmasq()
@@ -53,16 +55,15 @@ class DnsmasqManager:
     def _save_hosts(self, hosts):
         try:
             lines = []
-            # Keep non-dhcp-host lines
             if os.path.exists(self.config_path):
                 with open(self.config_path, "r") as f:
                     for line in f:
                         if not line.strip().startswith("dhcp-host="):
                             lines.append(line)
             
-            # Add updated dhcp-host lines
             for h in hosts:
-                lines.append(f"dhcp-host={h['mac']},{h['ip']},{h['name']}\n")
+                tag_str = f"set:{h['tag']}," if h.get("tag") and h['tag'] != "none" else ""
+                lines.append(f"dhcp-host={h['mac']},{tag_str}{h['ip']},{h['name']}\n")
                 
             with open(self.config_path, "w") as f:
                 f.writelines(lines)
