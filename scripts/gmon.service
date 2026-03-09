@@ -1,0 +1,16 @@
+[Unit]
+Description=gbot Network Monitor (Root, eBPF & Network Controls)
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /usr/local/lib/gbot/src/gmon/mcp_server.py
+Restart=always
+WorkingDirectory=/usr/local/lib/gbot
+User=root
+# Logging configuration
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

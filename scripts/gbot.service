@@ -1,0 +1,18 @@
+[Unit]
+Description=gbot Intelligent Gateway Controller (Brain & Channels)
+After=gmon.service
+
+[Service]
+Type=simple
+# Requires gbot user setup or running as nobody
+User=nobody
+Group=nogroup
+ExecStart=/usr/bin/python3 /usr/local/lib/gbot/src/gbot/main.py
+Restart=always
+WorkingDirectory=/usr/local/lib/gbot
+# Pass Environment variables if needed
+Environment=GBOT_CONFIG_PATH=/etc/gbot/config.yml
+Environment=GOOGLE_APPLICATION_CREDENTIALS=/etc/gbot/google_secret.json
+
+[Install]
+WantedBy=multi-user.target
