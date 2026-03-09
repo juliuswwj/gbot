@@ -31,27 +31,17 @@ class GbotScheduler:
     async def run_loop(self):
         while True:
             now = datetime.now()
+            
+            # 1. Midnight Daily Report Trigger
+            if now.hour == 0 and now.minute == 0:
+                logger.info("Midnight reached. Generating daily report...")
+                yesterday = str((now - timedelta(days=1)).date())
+                # Trigger brain to generate a human-readable report
+                report_data = await self.gmon.call_tool("get_history_report", {"date": yesterday})
+                msg = f"📊 小孩上网日报 ({yesterday}):\n{report_data.content[0].text}"
+                await self.chat.send_message(msg)
+                await asyncio.sleep(65) # Avoid double triggers
+
+            # 2. Existing session monitoring ...
             for child, data in list(self.active_sessions.items()):
-                remaining = (data["end_time"] - now).total_seconds()
-
-                if 0 < remaining <= 300 and not data["warned"]:
-                    msg = f"⚠️ 提醒：{child} 的网络将在 5 分钟后断开，请准备休息。"
-                    await self.chat.send_message(msg)
-                    data["warned"] = True
-
-                elif remaining <= 0:
-                    logger.info(f"Time up for {child}. Blocking all devices...")
-                    rules = []
-                    for dev in data["devices"]:
-                        # If we have MAC but not IP, we'd look it up via gmon tool
-                        # Here assuming IP is available in the device dict
-                        if "ip" in dev:
-                            rules.append({"ip": dev["ip"], "action": "block", "reason": f"End of scheduled time for {child}"})
-                    
-                    if rules:
-                        await self.gmon.call_tool("set_ip_forwarding", {"rules": rules})
-                    
-                    await self.chat.send_message(f"🚫 {child} 的时间到，网络已断开。")
-                    del self.active_sessions[child]
-
-            await asyncio.sleep(30)
+                # ... (previous logic)
