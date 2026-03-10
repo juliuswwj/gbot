@@ -4,7 +4,7 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/python3 /usr/local/lib/gbot/src/gmon/mcp_server.py
+ExecStart=/opt/gbot/venv/bin/python /usr/local/lib/gbot/src/gmon/mcp_server.py
 Restart=always
 WorkingDirectory=/usr/local/lib/gbot
 User=root

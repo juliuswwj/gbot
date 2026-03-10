@@ -34,21 +34,27 @@
 
 ## 🛠 安装说明
 
-### 1. 准备环境与专用用户
-在树莓派上安装依赖并创建专用系统用户：
+### 1. 准备环境与用户
+在树莓派上安装基础系统库：
 ```bash
 sudo apt update
-sudo apt install python3-pip clang llvm libelf-dev bpfcc-tools iptables dnsmasq
+sudo apt install python3-pip python3-venv clang llvm libelf-dev bpfcc-tools iptables dnsmasq
 sudo useradd -m -r -s /usr/sbin/nologin gbot
-pip3 install mcp pyyaml google-api-python-client aiohttp
 ```
 
-### 2. 目录权限配置
+### 2. 创建虚拟环境并安装依赖
+```bash
+sudo mkdir -p /opt/gbot
+sudo python3 -m venv /opt/gbot/venv
+sudo /opt/gbot/venv/bin/pip install mcp pyyaml google-api-python-client aiohttp
+```
+
+### 3. 目录权限配置
 创建必要的系统目录并分配权限：
 ```bash
 sudo mkdir -p /etc/gbot /var/lib/gbot
 sudo chown -R gbot:gbot /etc/gbot /var/lib/gbot
-# /run/gbot 目录及 Socket 权限由 gmon.service 自动管理
+# /opt/gbot/venv 建议保持 root 拥有，仅供服务调用
 ```
 
 ### 3. 配置 gbot (`/etc/gbot/config.yml`)
