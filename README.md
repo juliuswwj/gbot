@@ -79,21 +79,25 @@ nvm install 24
 
 # 4. 全局安装 gemini-cli
 npm install -g @google/gemini-cli
+
+# 5. 配置 Gemini-CLI
+# 使用 auth 命令配置 API Key（交互式）
+gemini auth
 ```
 
-安装完成后，退出 `gbot` 用户返回 root。
+安装并认证完成后，可以通过编辑 `/etc/gbot/.gemini/settings.json` 来确保开启了搜索工具：
+```json
+{
+  "api_key": "...",
+  "model": "gemini-2.0-flash",
+  "tools": ["google_web_search"]
+}
+```
 
-### 5. 配置 Google API 与 Gemini-CLI
-- **Google API**: 将凭证 JSON 放入 `/etc/gbot/google_secret.json`。
-- **Gemini-CLI**: 为 `gbot` 用户配置 `/etc/gbot/.gemini/settings.json`：
-  ```json
-  {
-    "api_key": "YOUR_GOOGLE_API_KEY",
-    "model": "gemini-2.0-flash",
-    "tools": ["google_web_search"]
-  }
-  ```
-  *注意：gbot 会自动加载该配置。*
+最后退出 `gbot` 用户返回 root。
+
+### 5. 配置 Google API 凭证
+将您的 Google Cloud OAuth2 凭证 JSON 放入 `/etc/gbot/google_secret.json`。
 
 ### 6. 编译、测试与部署
 ```bash
