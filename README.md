@@ -18,7 +18,19 @@
 
 ---
 
-## 🏗 安装说明
+## 🏗 架构设计
+
+```text
+(Root) [ gmon MCP Server ] <--- Unix Socket ---> (User) [ gbot MCP Host ]
+      | (eBPF, Network Ops)                           | (Scheduler, Channels)
+      |                                               |
+      +--> [ dnsmasq.conf ]                           +--> [ Gemini-CLI ]
+           (Single Source of Truth)                        (~/.gemini/settings.json)
+```
+
+---
+
+## 🛠 安装说明
 
 ### 1. 准备依赖环境
 在树莓派上运行以下命令安装必要的系统库：
@@ -65,7 +77,7 @@ users:
 ./test.sh
 ```
 
-### 5. 部署 Systemd 服务
+### 5. 部署服务
 ```bash
 sudo cp scripts/*.service /etc/systemd/system/
 sudo systemctl daemon-reload
