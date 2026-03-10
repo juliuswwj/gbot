@@ -9,12 +9,12 @@ class TestConfig(unittest.TestCase):
         config_data = {
             "system": {
                 "interface": "wlan0",
-                "drop_privileges_to": "gbot_user",
                 "dnsmasq_conf": "/etc/dnsmasq.conf"
             },
-            "mcp": {
-                "gmon_path": "/usr/bin/gmon"
-            }
+            "users": [
+                {"name": "Xiao Ming", "role": "child", "tag": "xiaoming"},
+                {"name": "Dad", "role": "parent", "contact": "dad@gmail.com"}
+            ]
         }
         
         with tempfile.NamedTemporaryFile(mode='w', suffix='.yml', delete=False) as f:
@@ -24,8 +24,9 @@ class TestConfig(unittest.TestCase):
         try:
             config = load_config(config_path)
             self.assertEqual(config.interface, "wlan0")
-            self.assertEqual(config.drop_to_user, "gbot_user")
-            self.assertEqual(config.gmon_path, "/usr/bin/gmon")
+            self.assertEqual(len(config.get_children()), 1)
+            self.assertEqual(config.get_children()[0]["name"], "Xiao Ming")
+            self.assertEqual(len(config.get_parents()), 1)
         finally:
             if os.path.exists(config_path):
                 os.remove(config_path)
@@ -38,7 +39,7 @@ class TestConfig(unittest.TestCase):
         try:
             config = load_config(config_path)
             self.assertEqual(config.interface, "eth0")
-            self.assertEqual(config.drop_to_user, "nobody")
+            self.assertEqual(len(config.get_children()), 0)
         finally:
             if os.path.exists(config_path):
                 os.remove(config_path)
