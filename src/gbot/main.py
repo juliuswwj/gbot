@@ -1,55 +1,82 @@
 import asyncio
 import logging
 import sys
+import argparse
 from src.gbot.config import load_config
-from src.gbot.privileges import drop_privileges, check_is_root
 from src.gbot.mcp_client import GmonClient
+from src.gbot.mcp_mock import MockGmonClient
+from src.gbot.brain import GeminiBrain
+from src.gbot.scheduler import GbotScheduler
+from src.gbot.calendar_sync import CalendarSync
+from src.gbot.channels.google_chat import GoogleChatInterface
+from src.gbot.channels.gmail_poller import GmailPoller
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-logger = logging.getLogger("gbot")
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - gbot - %(levelname)s - %(message)s')
+logger = logging.getLogger("main")
 
 class GbotApp:
-    def __init__(self, config_path=None):
-        self.config = load_config(config_path)
-        self.gmon = GmonClient(self.config.gmon_path)
+    def __init__(self, is_test=False):
+        self.config = load_config()
+        self.is_test = is_test
+        
+        # Initialize Gmon Client (Mocked if in test mode)
+        if self.is_test:
+            self.gmon = MockGmonClient()
+        else:
+            self.gmon = GmonClient()
+            
+        # Initialize Brain
+        self.brain = GeminiBrain()
+        
+        # Initialize Channels
+        self.chat = GoogleChatInterface(self.config, self.brain.query)
+        self.gmail = GmailPoller(self.config, self.brain.query)
+        
+        # Initialize Scheduler & Sync
+        self.scheduler = GbotScheduler(self.gmon, self.chat)
+        self.calendar = CalendarSync(self.config, self.scheduler)
 
     async def run(self):
-        logger.info("Starting gbot...")
+        logger.info(f"Starting gbot (Test Mode: {self.is_test})")
         
-        # 1. Start gmon while still having root privileges (if running as root)
-        # Note: In our current GmonClient implementation, it starts the process
-        # during connect().
-        logger.info("Initializing gmon connection (Root context)...")
-        await self.gmon.connect()
+        # 1. Connect to gmon
+        try:
+            await self.gmon.connect()
+            logger.info("Connected to gmon.")
+        except Exception as e:
+            if not self.is_test:
+                logger.error(f"Failed to connect to gmon: {e}")
+                return
+            logger.warning(f"Gmon connection failed, but continuing in test mode: {e}")
+
+        # 2. Start background tasks
+        tasks = [
+            asyncio.create_task(self.scheduler.run_loop()),
+            asyncio.create_task(self.calendar.run_loop()),
+            asyncio.create_task(self.gmail.poll_forever())
+        ]
         
-        # Verify connectivity
-        pong = await self.gmon.call_ping("initialization")
-        logger.info(f"gmon responded: {pong}")
-
-        # 2. Drop privileges
-        target_user = self.config.drop_to_user
-        logger.info(f"Dropping privileges to {target_user}...")
-        drop_privileges(target_user)
-
-        # 3. Running as normal user now
-        logger.info("gbot is now running as a normal user. Starting main loop...")
+        logger.info("gbot is now fully operational.")
         
         try:
-            # Here we would initialize Google Chat, Gmail, etc.
-            # For Phase 1, we'll just keep it alive.
-            while True:
-                await asyncio.sleep(3600)
+            await asyncio.gather(*tasks)
         except asyncio.CancelledError:
-            logger.info("Shutting down...")
+            logger.info("Shutdown requested.")
         finally:
             await self.gmon.disconnect()
 
 async def main():
-    app = GbotApp()
+    parser = argparse.ArgumentParser(description="gbot Intelligent Gateway")
+    parser.add_argument("-test", action="store_true", help="Run in test mode with mocked MCP")
+    args = parser.parse_args()
+
+    app = GbotApp(is_test=args.test)
     try:
         await app.run()
+    except KeyboardInterrupt:
+        pass
     except Exception as e:
-        logger.error(f"Fatal error: {e}")
+        logger.exception(f"Fatal error: {e}")
         sys.exit(1)
 
 if __name__ == "__main__":

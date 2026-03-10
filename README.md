@@ -96,8 +96,11 @@ gemini auth
 
 最后退出 `gbot` 用户返回 root。
 
-### 5. 配置 Google API 凭证
-将您的 Google Cloud OAuth2 凭证 JSON 放入 `/etc/gbot/google_secret.json`。
+### 5. 配置 Google API 凭证 (OAuth2)
+1. **获取客户端密钥**: 在 Google Cloud Console 创建 OAuth2 客户端 ID（桌面应用类型），下载 JSON 并存为 `/etc/gbot/google_secret.json`。
+2. **首次授权**: 
+   首次启动 `gbot` 时，它会输出一个授权 URL。请在有浏览器的电脑上访问该 URL，完成授权后将返回的验证码（或自动跳转）产生的 `token.json` 存放在 `/etc/gbot/`。
+   *提示：如果是在远程 SSH 运行，`google-auth-oauthlib` 会启动一个临时本地服务器来接收回调。*
 
 ### 6. 编译、测试与部署
 ```bash
