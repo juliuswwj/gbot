@@ -4,9 +4,9 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=/opt/gbot/venv/bin/python /usr/local/lib/gbot/src/gmon/mcp_server.py
+ExecStart=/opt/gbot/venv/bin/python /opt/gbot/src/gmon/mcp_server.py
 Restart=always
-WorkingDirectory=/usr/local/lib/gbot
+WorkingDirectory=/opt/gbot
 User=root
 # Automatically creates /run/gbot and clears it on stop
 RuntimeDirectory=gbot

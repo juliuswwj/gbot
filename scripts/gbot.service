@@ -7,9 +7,9 @@ Type=simple
 # Run as dedicated gbot user
 User=gbot
 Group=gbot
-ExecStart=/opt/gbot/venv/bin/python /usr/local/lib/gbot/src/gbot/main.py
+ExecStart=/opt/gbot/venv/bin/python /opt/gbot/src/gbot/main.py
 Restart=always
-WorkingDirectory=/usr/local/lib/gbot
+WorkingDirectory=/opt/gbot
 # Pass Environment variables if needed
 Environment=GBOT_CONFIG_PATH=/etc/gbot/config.yml
 Environment=GOOGLE_APPLICATION_CREDENTIALS=/etc/gbot/google_secret.json
