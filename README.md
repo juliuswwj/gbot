@@ -32,37 +32,32 @@
 
 ## 🛠 安装说明
 
-### 1. 准备依赖环境
-在树莓派上运行以下命令安装必要的系统库：
+### 1. 准备环境与用户
+在树莓派上安装依赖并创建专用用户：
 ```bash
 sudo apt update
 sudo apt install python3-pip clang llvm libelf-dev bpfcc-tools iptables dnsmasq
+sudo useradd -m -r -s /usr/sbin/nologin gbot
 pip3 install mcp pyyaml google-api-python-client aiohttp
 ```
 
-### 2. 配置 gbot
-创建并配置 `/etc/gbot/config.yml`：
-```yaml
-system:
-  interface: "eth0"
-  dnsmasq_conf: "/etc/dnsmasq.conf"
-
-google_api:
-  chat_webhook_url: "https://chat.googleapis.com/v1/spaces/..."
-
-users:
-  - name: "Xiao Ming"
-    role: "child"
-    tag: "xiaoming"
-    calendar_id: "..."
-  - name: "Dad"
-    role: "parent"
-    contact: "dad@gmail.com"
+### 2. 目录权限配置
+创建必要的系统目录并分配权限：
+```bash
+sudo mkdir -p /etc/gbot /var/lib/gbot /run/gbot
+sudo chown -R gbot:gbot /etc/gbot /var/lib/gbot
+# gmon.sock 所在目录权限由 gmon.service 自动管理
 ```
 
-### 3. 配置 Google API 与 Gemini-CLI
+### 3. 配置 gbot
+创建并配置 `/etc/gbot/config.yml`：
+```yaml
+# ... (配置内容同前) ...
+```
+
+### 4. 配置 Google API 与 Gemini-CLI
 - **Google API**: 将您的 OAuth2 凭证 JSON 放入 `/etc/gbot/google_secret.json`。
-- **Gemini-CLI**: 为运行 `gbot` 的用户配置 `~/.gemini/settings.json`：
+- **Gemini-CLI**: 为 `gbot` 用户配置 `/home/gbot/.gemini/settings.json`：
   ```json
   {
     "api_key": "YOUR_GOOGLE_API_KEY",
@@ -70,6 +65,7 @@ users:
     "tools": ["google_web_search"]
   }
   ```
+  确保该文件属主为 `gbot:gbot` 且权限为 `600`。
 
 ### 4. 编译与测试
 运行测试脚本验证环境与代码逻辑：

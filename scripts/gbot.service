@@ -4,9 +4,9 @@ After=gmon.service
 
 [Service]
 Type=simple
-# Requires gbot user setup or running as nobody
-User=nobody
-Group=nogroup
+# Run as dedicated gbot user
+User=gbot
+Group=gbot
 ExecStart=/usr/bin/python3 /usr/local/lib/gbot/src/gbot/main.py
 Restart=always
 WorkingDirectory=/usr/local/lib/gbot

@@ -8,7 +8,9 @@ ExecStart=/usr/bin/python3 /usr/local/lib/gbot/src/gmon/mcp_server.py
 Restart=always
 WorkingDirectory=/usr/local/lib/gbot
 User=root
-# Logging configuration
+# Automatically creates /run/gbot and clears it on stop
+RuntimeDirectory=gbot
+RuntimeDirectoryMode=0755
 StandardOutput=journal
 StandardError=journal
 
