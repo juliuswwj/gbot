@@ -72,10 +72,10 @@ cd ~
 
 # 2. 安装 nvm (Node Version Manager)
 curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash
-source ~/.bashrc
+source ~/.profile
 
-# 3. 安装 Node.js (推荐 v20+)
-nvm install 20
+# 3. 安装 Node.js (推荐 v24+)
+nvm install 24
 
 # 4. 全局安装 gemini-cli
 npm install -g @google/gemini-cli
