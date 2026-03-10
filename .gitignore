@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.env
+
+# SQLite & Database
+*.db
+*.db-wal
+*.db-shm
+/var/lib/gbot/*
+
+# eBPF
+*.o
+src/gmon/ebpf/*.o
+
+# Config & Secrets
+/etc/gbot/config.yml
+/etc/gbot/google_secret.json
+.gemini/settings.json
+
+# IDE
+.vscode/
+.idea/
+*.swp
