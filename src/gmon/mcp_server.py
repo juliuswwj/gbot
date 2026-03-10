@@ -2,6 +2,7 @@ import asyncio
 import os
 import json
 import logging
+import grp
 from datetime import date
 from mcp.server import Server
 from src.gmon.aggregator import TrafficAggregator
@@ -21,7 +22,7 @@ firewall = FirewallManager()
 behavior_db = BehaviorDB()
 history_db = HistoryDB()
 
-# --- Tools Definition (Same as before) ---
+# --- Tools Definition (Omitted for brevity, remains unchanged) ---
 @app.list_tools()
 async def list_tools() -> list[Tool]:
     return [
@@ -78,8 +79,15 @@ async def main():
     aggregator.update_host_map()
     server = await asyncio.start_unix_server(handle_unix_client, path=socket_path)
     
-    # Set socket permissions so gbot (user) can read/write
-    os.chmod(socket_path, 0o666)
+    # Secure Socket Permissions: Group 'gbot', Mode 660
+    try:
+        gbot_gid = grp.getgrnam("gbot").gr_gid
+        os.chown(socket_path, 0, gbot_gid) # Owner: root, Group: gbot
+        os.chmod(socket_path, 0o660)       # rw-rw----
+        logger.info(f"Socket permissions set to 660, Group: gbot")
+    except KeyError:
+        logger.warning("Group 'gbot' not found. Defaulting to insecure permissions.")
+        os.chmod(socket_path, 0o666)
     
     logger.info(f"gmon MCP Server listening on {socket_path}")
     async with server:
