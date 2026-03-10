@@ -62,7 +62,28 @@ sudo mkdir -p /var/lib/gbot
 sudo chown -R gbot:gbot /var/lib/gbot /etc/gbot
 ```
 
-### 4. 配置 Google API 与 Gemini-CLI
+### 4. 安装 gemini-cli (大脑引擎)
+`gbot` 依赖 `gemini-cli` 作为决策大脑。请务必切换到 `gbot` 用户进行安装，以确保环境隔离：
+
+```bash
+# 1. 切换到 gbot 用户
+sudo -u gbot /bin/bash
+cd ~
+
+# 2. 安装 nvm (Node Version Manager)
+curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash
+source ~/.bashrc
+
+# 3. 安装 Node.js (推荐 v20+)
+nvm install 20
+
+# 4. 全局安装 gemini-cli
+npm install -g @google/gemini-cli
+```
+
+安装完成后，退出 `gbot` 用户返回 root。
+
+### 5. 配置 Google API 与 Gemini-CLI
 - **Google API**: 将凭证 JSON 放入 `/etc/gbot/google_secret.json`。
 - **Gemini-CLI**: 为 `gbot` 用户配置 `/etc/gbot/.gemini/settings.json`：
   ```json
@@ -72,8 +93,9 @@ sudo chown -R gbot:gbot /var/lib/gbot /etc/gbot
     "tools": ["google_web_search"]
   }
   ```
+  *注意：gbot 会自动加载该配置。*
 
-### 5. 编译、测试与部署
+### 6. 编译、测试与部署
 ```bash
 ./test.sh
 sudo cp scripts/*.service /etc/systemd/system/
