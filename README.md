@@ -89,6 +89,7 @@ users:
 #### 2. 获取授权令牌 (Scope)
 引导 OAuth2 流程以获取 `refresh_token`。**必须** 包含以下 Scope 以同时支持日历同步和聊天功能：
 *   `ZohoCalendar.calendar.READ` (日历读取)
+*   `ZohoCliq.Webhooks.CREATE` (发送消息到聊天 - 必须)
 *   `ZohoCliq.Messages.CREATE` (发送消息到聊天 - 必须)
 *   `ZohoCliq.Chats.UPDATE` (更新/发送聊天消息 - 建议)
 *   `ZohoCliq.Chats.READ` (读取聊天信息 - 建议)
