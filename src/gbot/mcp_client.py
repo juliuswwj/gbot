@@ -4,7 +4,11 @@ import contextlib
 from mcp.client.session import ClientSession
 
 class GmonClient:
-    def __init__(self, socket_path="/run/gbot/gmon.sock"):
+    def __init__(self, socket_path=None):
+        if socket_path is None:
+            socket_path = os.path.expanduser("~/.gbot/gmon.sock")
+            if not os.path.exists(socket_path):
+                socket_path = "/run/gbot/gmon.sock"
         self.socket_path = socket_path
         self._session = None
         self._exit_stack = None

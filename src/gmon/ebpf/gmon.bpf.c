@@ -63,15 +63,16 @@ struct {
 
 SEC("tc")
 int gmon_tc_main(struct __sk_buff *skb) {
-    // ... (previous parsing logic) ...
-    
-    // --- Enhanced SNI Interception ---
-    // If SNI is extracted and found in blocked_domains:
-    // return TC_ACT_SHOT; 
+    void *data_end = (void *)(long)skb->data_end;
+    void *data = (void *)(long)skb->data;
 
-    // For now, we signal to userspace or perform a simple check if the SNI matches a known prefix.
-    return TC_ACT_OK;
-}
+    struct ethhdr *eth = data;
+    if ((void *)(eth + 1) > data_end) return TC_ACT_OK;
+
+    if (bpf_ntohs(eth->h_proto) != ETH_P_IP) return TC_ACT_OK;
+
+    struct iphdr *ip = data + sizeof(struct ethhdr);
+    if ((void *)(ip + 1) > data_end) return TC_ACT_OK;
 
     struct flow_key key = {
         .saddr = ip->saddr,
@@ -88,26 +89,22 @@ int gmon_tc_main(struct __sk_buff *skb) {
         dport = bpf_ntohs(tcp->dest);
         key.dport = dport;
         
-        // --- SNI Detection ---
-        // Basic TLS check: Handshake (0x16), Version 3.1-3.3 (0x03 0x01/02/03)
-        // Handshake type: Client Hello (0x01)
+        // --- SNI Detection (Skeleton) ---
         __u8 *tls_payload = (void *)tcp + (tcp->doff * 4);
         if ((void *)(tls_payload + 5) <= data_end) {
             if (tls_payload[0] == 0x16 && tls_payload[1] == 0x03 && tls_payload[5] == 0x01) {
-                 // In a full implementation, we would parse the SNI extension here.
-                 // For now, we signal that this IP:Port should be inspected by userspace or marked.
+                 // In a full implementation, SNI parsing would happen here.
             }
         }
-
     } else if (ip->protocol == IPPROTO_UDP) {
         struct udphdr *udp = data + payload_off;
         if ((void *)(udp + 1) > data_end) return TC_ACT_OK;
         dport = bpf_ntohs(udp->dest);
         key.dport = dport;
 
-        // --- DNS Detection (UDP 53) ---
+        // --- DNS Detection (Skeleton) ---
         if (dport == 53 || bpf_ntohs(udp->source) == 53) {
-            // Signal to userspace to parse DNS packet or perform simplified parsing here.
+            // In a full implementation, DNS parsing would happen here.
         }
     } else {
         return TC_ACT_OK;

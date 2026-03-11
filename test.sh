@@ -30,10 +30,40 @@ fi
 echo "Running Python Unit Tests..."
 export PYTHONPATH=$PYTHONPATH:$(pwd)/src
 if python3 -m unittest discover tests; then
-    echo "=== All Python tests passed successfully ==="
+    echo "=== All Python unit tests passed successfully ==="
 else
-    echo "ERROR: Python tests failed."
+    echo "ERROR: Python unit tests failed."
     exit 1
 fi
 
-echo "=== gbot test script finished ==="
+# 3. Automated Integration Test (Zoho Webhook & Gemini Brain)
+echo "Running Automated Integration Test..."
+CONFIG_DIR="$HOME/.gbot"
+export GBOT_CONFIG_PATH="$CONFIG_DIR/config.yml"
+
+if [ ! -f "$CONFIG_DIR/config.yml" ]; then
+    echo "SKIP: Integration test skipped because config.yml is missing in $CONFIG_DIR."
+    exit 0
+fi
+
+echo "Starting gbot in background..."
+PYTHONPATH=$(pwd)/src python3 src/gbot/main.py -test &
+GBOT_PID=$!
+
+# Give it a few seconds to start the web server
+sleep 5
+
+echo "Sending simulated Zoho Email Webhook to /bot/mail..."
+TOKEN=$(grep "webhook_token:" "$GBOT_CONFIG_PATH" | awk '{print $2}' | tr -d '"')
+if [ -z "$TOKEN" ]; then TOKEN="test_token"; fi
+
+curl -s -X POST http://localhost:8080/bot/mail \
+     -H 'Content-Type: application/json' \
+     -H "Authorization: Bearer $TOKEN" \
+     -d '{"from": "wwj@ham2.me", "subject": "Test Command", "content": "Ping", "id": "test_msg_123"}'
+
+echo ""
+echo "Waiting for gbot to finish processing..."
+wait $GBOT_PID
+
+echo "=== gbot tests finished ==="

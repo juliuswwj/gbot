@@ -1,6 +1,6 @@
 # gbot: 高性能智能家庭网关机器人
 
-`gbot` 是一个专为 Linux 网关（如 Raspberry Pi 5）设计的智能管家。它结合了 **eBPF 深度包检测**、**Google 生态集成**与 **Gemini 大模型**，能够自动识别内网家庭成员的网络行为并执行智能调度。
+`gbot` 是一个专为 Linux 网关（如 Raspberry Pi 5）设计的智能管家。它结合了 **eBPF 深度包检测**、**Zoho 生态集成**与 **Gemini 大模型**，能够自动识别内网家庭成员的网络行为并执行智能调度。
 
 ---
 
@@ -9,13 +9,13 @@
 - **eBPF 高性能嗅探**: 在内核态实现全端口流量分析，精准提取 SNI 和 DNS。
 - **Tags 驱动的设备管理**: 所有设备（MAC/IP/名称/标签）均存储在 `dnsmasq.conf` 中。
 - **智能分析与学习**: 区分“游戏”、“网课”与“视频”，支持主动 Web 搜索学习。
-- **Google 生态联动**: 
-  - **同步日历**: 执行“休息/网课”日程安排，并提前 5 分钟发出 Chat 警告。
-  - **精细控制**: 网课期间仅封禁游戏，保留学习工具。
+- **Zoho 生态联动**: 
+  - **同步 Zoho 日历**: 执行“休息/网课”日程安排，并提前 5 分钟发出通知。
+  - **Zoho Cliq 通知**: 实时发送状态报告与报警到指定的 Cliq 频道。
+  - **Zoho Email 控制**: 支持通过 Zoho 邮件 Webhook 接收远程指令并由 Gemini 处理。
 - **加固与优化**: 
   - **安全隔离**: `gmon (Root)` 与 `gbot (User)` 通过 Unix Socket (`0660`, Group: `gbot`) 进行通信。
-  - **权限分级**: **源码存放在 `/opt/gbot`，属主为 `root`，防止降权后的 `gbot` 用户篡改代码。**
-  - **SD 卡优化**: SQLite WAL 模式，支持 30 天自动老化。
+  - **权限分级**: 源码属主为 `root`，防止降权后的 `gbot` 用户篡改代码。
 
 ---
 
@@ -26,7 +26,7 @@
       | (eBPF, Network Ops)                                | (Scheduler, Channels)
       |                                                    |
       +--> [ dnsmasq.conf ]                                +--> [ Gemini-CLI ]
-           (Single Source of Truth)                             (/etc/gbot/.gemini/settings.json)
+           (Single Source of Truth)                             +--> [ Zoho Cliq/Calendar ]
 ```
 
 ---
@@ -34,83 +34,77 @@
 ## 🛠 安装说明
 
 ### 1. 准备环境与用户
-在树莓派上安装基础系统库并创建专用用户：
 ```bash
 sudo apt update
 sudo apt install python3-pip python3-venv clang llvm libelf-dev bpfcc-tools iptables dnsmasq
-# 创建 gbot 用户，主目录设为 /etc/gbot
 sudo useradd -m -r -d /etc/gbot -s /usr/sbin/nologin gbot
 ```
 
-### 2. 源码部署与权限加固
-将代码部署到 `/opt/gbot`，并建立虚拟环境：
+### 2. 源码部署与权限
 ```bash
-sudo mkdir -p /opt/gbot
-# 将项目源码拷贝至 /opt/gbot/src
-# 确保源码属主为 root，防止 gbot 用户被攻破后篡改代码
-sudo chown -R root:root /opt/gbot
-
-# 创建并安装虚拟环境
-sudo python3 -m venv /opt/gbot/venv
-sudo /opt/gbot/venv/bin/pip install mcp pyyaml google-api-python-client aiohttp
-```
-
-### 3. 数据与配置目录权限
-创建持久化数据目录，并分配给 `gbot` 用户：
-```bash
-sudo mkdir -p /var/lib/gbot
+sudo mkdir -p /opt/gbot /var/lib/gbot /etc/gbot
 sudo chown -R gbot:gbot /var/lib/gbot /etc/gbot
+# 将源码放入 /opt/gbot/src ...
 ```
 
-### 4. 安装 gemini-cli (大脑引擎)
-`gbot` 依赖 `gemini-cli` 作为决策大脑。请务必切换到 `gbot` 用户进行安装，以确保环境隔离：
+### 3. 配置文件示例 (`/etc/gbot/config.yml`)
+```yaml
+system:
+  interface: "eth0"
+  webhook_port: 8080
+  dnsmasq_conf: "/etc/dnsmasq.conf"
+  block_list_db: "/var/lib/gbot/blocks.json"
 
-```bash
-# 1. 切换到 gbot 用户
-sudo -u gbot /bin/bash
-cd ~
+zoho:
+  client_id: "1000.XXXXXX"
+  client_secret: "XXXXXX"
+  refresh_token: "1000.XXXXXX.XXXXXX"
+  region: "com"
+  webhook_token: "your_secure_token"  # Used for /bot/mail and /bot/chat auth
+  cron_chat_id: "16087..."            # Default chat for daily reports/warnings
+  cron_chat_language: "en_us"         # Language for daily reports (default: en_us)
 
-# 2. 安装 nvm (Node Version Manager)
-curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash
-source ~/.profile
+gemini:
+  api_key: "AIzaSy..."  # Optional: Google AI Studio API Key (Priority)
+  model: "gemini-3.1-flash-lite-preview"  # Default if not specified
 
-# 3. 安装 Node.js (推荐 v24+)
-nvm install 24
-
-# 4. 全局安装 gemini-cli
-npm install -g @google/gemini-cli
-
-# 5. 配置 Gemini-CLI
-# 使用 auth 命令配置 API Key（交互式）
-gemini auth
+users:
+  - name: "Child1"
+    role: "child"
+    calendar_id: "hex_calendar_id_here"
+    devices: ["AA:BB:CC:DD:EE:FF"]
+  - name: "Dad"
+    role: "parent"
+    contact: "dad@example.com"
+    language: "zh_cn"                 # Language for brain responses (default: zh_cn)
 ```
 
-安装并认证完成后，可以通过编辑 `/etc/gbot/.gemini/settings.json` 来确保开启了搜索工具：
-```json
-{
-  "api_key": "...",
-  "model": "gemini-2.0-flash",
-  "tools": ["google_web_search"]
-}
-```
+### 4. Zoho API 配置说明 (Cliq & Calendar)
 
-最后退出 `gbot` 用户返回 root。
+#### 1. 注册 Zoho 应用程序
+1. 访问 [Zoho API Console](https://api-console.zoho.com/)。
+2. 注册一个 **Server-based Application**。
+3. 获取 `Client ID` 和 `Client Secret`。
 
-### 5. 配置 Google API 凭证 (OAuth2)
-1. **获取客户端密钥**: 在 Google Cloud Console 创建 OAuth2 客户端 ID（桌面应用类型），下载 JSON 并存为 `/etc/gbot/google_secret.json`。
-2. **首次授权**: 
-   首次启动 `gbot` 时，它会输出一个授权 URL。请在有浏览器的电脑上访问该 URL，完成授权后将返回的验证码（或自动跳转）产生的 `token.json` 存放在 `/etc/gbot/`。
-   *提示：如果是在远程 SSH 运行，`google-auth-oauthlib` 会启动一个临时本地服务器来接收回调。*
+#### 2. 获取授权令牌 (Scope)
+引导 OAuth2 流程以获取 `refresh_token`。**必须** 包含以下 Scope 以同时支持日历同步和聊天功能：
+*   `ZohoCalendar.calendar.READ` (日历读取)
+*   `ZohoCliq.chats.CREATE` (发送消息到聊天)
+*   `ZohoCliq.messages.CREATE` (消息处理)
 
-### 6. 编译、测试与部署
+#### 3. 配置 Webhook (Zoho Cliq Webhook)
+1. 在 Zoho Cliq 中设置 **Bot** 或 **Outgoing Webhook**。
+2. **端点地址**：
+   - 指向 `http://<your-gateway-ip>:8080/bot/chat` (Cliq 聊天消息)
+   - 指向 `http://<your-gateway-ip>:8080/bot/mail` (邮件/系统通知)
+3. **安全认证**：设置 `webhook_token` 并在 Webhook 头部包含 `Authorization: Bearer <webhook_token>`。
+4. **数据格式**：
+   - `/bot/chat`：由 Zoho Cliq 自动生成。支持 `message`, `mention`, `function` 处理器。
+   - `/bot/mail`：自定义 JSON (包含 `from`, `subject`, `content`, `id`, `chat_id`)。
+
+
+### 5. 编译与测试
 ```bash
 ./test.sh
-sudo cp scripts/*.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable --now gmon gbot
 ```
-
----
-
-## ⚖️ 许可证
-GPL v3
+由于切换到了 Zoho Webhook 模式，集成测试现在可以通过 `curl` 模拟 Zoho 的 Webhook 请求。

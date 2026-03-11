@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import patch, MagicMock
 import os
-from src.gbot.privileges import drop_privileges
+from gbot.privileges import drop_privileges
 
 class TestPrivileges(unittest.TestCase):
     @patch("os.getuid")

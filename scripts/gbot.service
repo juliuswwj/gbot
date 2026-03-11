@@ -11,6 +11,7 @@ ExecStart=/opt/gbot/venv/bin/python /opt/gbot/src/gbot/main.py
 Restart=always
 WorkingDirectory=/opt/gbot
 # Pass Environment variables if needed
+Environment=PYTHONPATH=/opt/gbot/src
 Environment=GBOT_CONFIG_PATH=/etc/gbot/config.yml
 Environment=GOOGLE_APPLICATION_CREDENTIALS=/etc/gbot/google_secret.json
 

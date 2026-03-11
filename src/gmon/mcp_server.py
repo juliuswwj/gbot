@@ -5,10 +5,10 @@ import logging
 import grp
 from datetime import date
 from mcp.server import Server
-from src.gmon.aggregator import TrafficAggregator
-from src.gmon.network_ops import DnsmasqManager, FirewallManager
-from src.gmon.behavior_db import BehaviorDB
-from src.gmon.history_db import HistoryDB
+from gmon.aggregator import TrafficAggregator
+from gmon.network_ops import DnsmasqManager, FirewallManager
+from gmon.behavior_db import BehaviorDB
+from gmon.history_db import HistoryDB
 from mcp.types import Tool, TextContent
 
 # Setup logging
@@ -71,7 +71,16 @@ async def handle_unix_client(reader, writer):
     logger.info("Client disconnected")
 
 async def main():
-    socket_path = "/run/gbot/gmon.sock"
+    # Priority: ~/.gbot/gmon.sock for dev, /run/gbot/gmon.sock for production
+    socket_path = os.path.expanduser("~/.gbot/gmon.sock")
+    # If we are root and /run/gbot exists, use that
+    if os.getuid() == 0:
+        if os.path.exists("/run/gbot"):
+            socket_path = "/run/gbot/gmon.sock"
+        else:
+            os.makedirs("/run/gbot", exist_ok=True)
+            socket_path = "/run/gbot/gmon.sock"
+
     os.makedirs(os.path.dirname(socket_path), exist_ok=True)
     if os.path.exists(socket_path):
         os.remove(socket_path)

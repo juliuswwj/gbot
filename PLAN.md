@@ -52,52 +52,63 @@
 *   **MCP 模式**: 使用 `gemini-cli` 作为核心引擎，自动发现并调用 `gmon` 提供的工具。
 *   **行为识别 Logic**: 在 System Prompt 中注入域名/行为映射表。
     *   高频域名匹配（如 Roblox -> 游戏，Zoom -> 网课）。
-    *   结合流量特征（如 UDP 大流量 -> 游戏/视频流）。
+    5.  **连接器**: 集成 Zoho Cliq，作为与用户的沟通界面，并支持通过 Webhook 接收 Zoho 邮件指令。
+    ...
+    ### 3.3 沟通渠道 (Channels)
+    *   **Zoho Cliq**: 实时发送通知到 Zoho Cliq Channel。
+    *   **Zoho Email Webhook**: 接收来自 Zoho 邮件的 Webhook 并在本地监听 8080 端口处理指令。
 
-### 3.3 沟通渠道 (Channels)
-*   **Gmail**: 轮询收件箱。解析特定主题或发件人的指令，调用 Gemini 处理后回信。
-*   **Google Chat**: 实时处理 Space 中的消息。
+    ---
 
----
+    ## 4. 开发路线图
 
-## 4. 开发路线图
+    ### 第一阶段：安全与进程框架 (Security & IPC)
+    - [x] 编写 `/root/.gbot.yml` 解析器。
+    - [x] 实现 `gbot` 启动 `gmon` 并成功降权的 Python 原型。
+    - [x] 建立基于 stdio 的 MCP 通信通道。
 
-### 第一阶段：安全与进程框架 (Security & IPC)
-- [x] 编写 `/root/.gbot.yml` 解析器。
-- [x] 实现 `gbot` 启动 `gmon` 并成功降权的 Python 原型。
-- [x] 建立基于 stdio 的 MCP 通信通道。
+    ### 第二阶段：eBPF 采集与数据面 (Data Plane)
+    - [x] 编写 eBPF C 代码提取 DNS 和 SNI。
+    - [x] 实现 BPF Map 到 Python 聚合引擎的数据导出。
+    - [x] 编写流量聚合逻辑，支持 IP:Port 和字节数统计。
 
-### 第二阶段：eBPF 采集与数据面 (Data Plane)
-- [x] 编写 eBPF C 代码提取 DNS 和 SNI。
-- [x] 实现 BPF Map 到 Python 聚合引擎的数据导出。
-- [x] 编写流量聚合逻辑，支持 IP:Port 和字节数统计。
+    ### 第三阶段：网络工具与管理 (Network Ops)
+    - [x] 实现 `dnsmasq.conf` 的读写解析逻辑。
+    - [x] 实现基于 `iptables/nftables` 的 IP Forwarding 控制工具。
+    5.  **连接器**: 集成 Zoho Cliq 和 Zoho Calendar，作为与用户的沟通与计划同步界面。
+    ...
+    ### 第四阶段：大脑与通讯 (Intelligence & Channels)
+    - [x] 配置 Gemini-CLI 的 MCP Host 环境。
+    - [x] 集成 Zoho Cliq (Incoming Webhook)。
+    - [x] 集成 Zoho Email (Incoming Webhook Server)。
+    - [x] 集成 Zoho Calendar API 同步。
+    - [x] 编写针对内网分析优化的 System Prompt。
 
-### 第三阶段：网络工具与管理 (Network Ops)
-- [x] 实现 `dnsmasq.conf` 的读写解析逻辑。
-- [x] 实现基于 `iptables/nftables` 的 IP Forwarding 控制工具。
-- [x] 测试 `get_host_activity` 聚合摘要输出的准确性。
+    ---
 
-### 第四阶段：大脑与通讯 (Intelligence & Channels)
-- [x] 配置 Gemini-CLI 的 MCP Host 环境。
-- [x] 集成 Google Chat API。
-- [x] 集成 Gmail API (OAuth2)。
-- [x] 编写针对内网分析优化的 System Prompt。
+    ## 5. 配置文件定义 (`/etc/gbot/config.yml`)
 
----
+    ```yaml
+    system:
+      interface: "eth0"
+      drop_privileges_to: "nobody"
+      dnsmasq_conf: "/etc/dnsmasq.conf"
+      block_list_db: "/var/lib/gbot/blocks.json"
+      webhook_port: 8080
 
-## 5. 配置文件定义 (`/etc/gbot/config.yml`)
+    zoho:
+      client_id: "..."
+      client_secret: "..."
+      refresh_token: "..."
+      region: "com"
+      webhook_token: "..."
 
-```yaml
-system:
-  interface: "eth0"
-  drop_privileges_to: "nobody"
-  dnsmasq_conf: "/etc/dnsmasq.conf"
-  block_list_db: "/var/lib/gbot/blocks.json"
+    gemini:
+      api_key: "..."
+      model: "gemini-3.1-flash-lite-preview"
 
-google_api:
-  gmail_credentials: "/etc/gbot/google_secret.json"
-  chat_webhook_url: "..."
+    mcp:
+      gmon_path: "/usr/local/bin/gmon"
+    ```
 
-mcp:
-  gmon_path: "/usr/local/bin/gmon"
-```
+

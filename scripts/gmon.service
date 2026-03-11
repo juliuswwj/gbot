@@ -7,6 +7,7 @@ Type=simple
 ExecStart=/opt/gbot/venv/bin/python /opt/gbot/src/gmon/mcp_server.py
 Restart=always
 WorkingDirectory=/opt/gbot
+Environment=PYTHONPATH=/opt/gbot/src
 User=root
 # Automatically creates /run/gbot and clears it on stop
 RuntimeDirectory=gbot

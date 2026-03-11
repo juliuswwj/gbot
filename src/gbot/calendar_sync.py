@@ -1,58 +1,94 @@
 import asyncio
 import logging
-from datetime import datetime, timedelta
-from src.gbot.google_auth import get_google_credentials
+import requests
+from datetime import datetime, timezone
+from gbot.zoho_auth import ZohoAuth
 
 logger = logging.getLogger(__name__)
 
 class CalendarSync:
-    def __init__(self, config, scheduler):
+    def __init__(self, config, scheduler, auth=None):
         self.config = config
         self.scheduler = scheduler
-        self.service = None
-
-    def _get_service(self):
-        if self.service: return self.service
-        try:
-            creds = get_google_credentials()
-            if not creds:
-                return None
-            self.service = build('calendar', 'v3', credentials=creds)
-            return self.service
-        except Exception as e:
-            logger.error(f"Failed to init Google Calendar: {e}")
-            return None
+        self.auth = auth or ZohoAuth(config)
+        self.region = config.zoho.get("region", "com")
+        self.base_url = f"https://calendar.zoho.{self.region}/api/v1"
 
     async def sync_now(self):
-        service = self._get_service()
-        if not service: return
+        """Sync Zoho Calendar events for all children."""
+        access_token = self.auth.get_access_token()
+        if not access_token:
+            return
 
-        now = datetime.utcnow().isoformat() + 'Z'
+        headers = {
+            "Authorization": f"Zoho-oauthtoken {access_token}",
+            "Content-Type": "application/json"
+        }
+
+        # Current time in UTC for comparison
+        now = datetime.now(timezone.utc)
+        
         for child in self.config.get_children():
+            # In Zoho, calendar ID is needed. 
+            # We assume it's the primary one if not specified or specific ID provided.
             cal_id = child.get("calendar_id")
-            if not cal_id: continue
+            if not cal_id:
+                # To get primary, one might first list_calendars, but we expect an ID or use 'primary'
+                # Note: Zoho API uses actual hex IDs usually.
+                continue
             
             try:
-                events_result = service.events().list(calendarId=cal_id, timeMin=now,
-                                                    maxResults=5, singleEvents=True,
-                                                    orderBy='startTime').execute()
-                events = events_result.get('items', [])
+                # Fetch events for the next 24 hours
+                # Zoho filter example: /calendars/{uid}/events
+                # We need to filter by time. Zoho API documentation might require specific query params.
+                # Assuming simple list first for integration.
+                url = f"{self.base_url}/calendars/{cal_id}/events"
+                params = {
+                    "startdate": now.strftime("%Y-%m-%dT%H:%M:%SZ")
+                }
+                
+                # Using run_in_executor for blocking requests call
+                loop = asyncio.get_event_loop()
+                response = await loop.run_in_executor(None, 
+                    lambda: requests.get(url, headers=headers, params=params))
+                
+                if response.status_code != 200:
+                    logger.error(f"Zoho Calendar API error: {response.status_code} {response.text}")
+                    continue
+                
+                events_data = response.json()
+                events = events_data.get('events', [])
                 
                 for event in events:
-                    summary = event.get('summary', '').lower()
-                    start_str = event['start'].get('dateTime') or event['start'].get('date')
-                    end_str = event['end'].get('dateTime') or event['end'].get('date')
+                    summary = event.get('title', '').lower() # Zoho uses 'title'
+                    # Zoho uses 'start' and 'end' as dictionaries
+                    start_info = event.get('start', {})
+                    end_info = event.get('end', {})
                     
+                    start_str = start_info.get('date_time') or start_info.get('date')
+                    end_str = end_info.get('date_time') or end_info.get('date')
+                    
+                    if not start_str or not end_str:
+                        continue
+
                     # Logic to identify Rest or Class sessions
-                    if "rest" in summary or "sleep" in summary or "class" in summary or "study" in summary:
-                        end_time = datetime.fromisoformat(end_str.replace('Z', '+00:00'))
-                        # Add to scheduler
-                        self.scheduler.schedule_child_rest(child['name'], [], end_time)
+                    if any(kw in summary for kw in ["rest", "sleep", "class", "study", "homework"]):
+                        # Parse time (Zoho format might vary, usually ISO-ish)
+                        try:
+                            # Handle potential Z or timezone offsets
+                            end_time = datetime.fromisoformat(end_str.replace('Z', '+00:00'))
+                            
+                            if end_time > now:
+                                logger.info(f"Scheduled rest for {child['name']} until {end_time} based on: {summary}")
+                                self.scheduler.schedule_child_rest(child['name'], [], end_time)
+                        except Exception as parse_err:
+                            logger.error(f"Failed to parse Zoho event time: {end_str}, error: {parse_err}")
                         
             except Exception as e:
-                logger.error(f"Error syncing cal {cal_id}: {e}")
+                logger.error(f"Error syncing Zoho cal {cal_id} for {child['name']}: {e}")
 
     async def run_loop(self):
+        logger.info("Starting Zoho Calendar sync loop.")
         while True:
             await self.sync_now()
             await asyncio.sleep(900) # Sync every 15 mins

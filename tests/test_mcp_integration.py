@@ -1,7 +1,7 @@
 import unittest
 import asyncio
 from unittest.mock import patch, MagicMock, AsyncMock
-from src.gbot.mcp_client import GmonClient
+from gbot.mcp_client import GmonClient
 
 class TestMcpIntegration(unittest.IsolatedAsyncioTestCase):
     @patch("asyncio.open_unix_connection")
@@ -13,7 +13,7 @@ class TestMcpIntegration(unittest.IsolatedAsyncioTestCase):
         
         # We need to mock the ClientSession that connect() creates internally
         # but since we want to test GmonClient, we'll patch ClientSession class
-        with patch("src.gbot.mcp_client.ClientSession") as mock_session_class:
+        with patch("gbot.mcp_client.ClientSession") as mock_session_class:
             mock_session = AsyncMock()
             mock_session.initialize = AsyncMock()
             

@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import patch, MagicMock, mock_open
 import os
-from src.gmon.network_ops import DnsmasqManager, FirewallManager
+from gmon.network_ops import DnsmasqManager, FirewallManager
 
 class TestNetworkOps(unittest.TestCase):
     def test_dnsmasq_get_hosts(self):
