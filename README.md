@@ -89,10 +89,10 @@ users:
 #### 2. 获取授权令牌 (Scope)
 引导 OAuth2 流程以获取 `refresh_token`。**必须** 包含以下 Scope 以同时支持日历同步和聊天功能：
 *   `ZohoCalendar.calendar.READ` (日历读取)
-*   `ZohoCliq.Webhooks.CREATE` (发送消息到聊天 - 必须)
-*   `ZohoCliq.Chats.UPDATE` (更新/发送聊天消息 - 必须)
-*   `ZohoCliq.Chats.READ` (读取聊天信息 - 建议)
-*   `ZohoCliq.messages.CREATE` (消息处理)
+*   `ZohoCliq.messages.CREATE` (发送消息到聊天 - 必须)
+*   `ZohoCliq.chats.UPDATE` (更新/发送聊天消息 - 建议)
+*   `ZohoCliq.chats.READ` (读取聊天信息 - 建议)
+*   `ZohoCliq.channels.READ` (读取频道信息 - 如果涉及频道则必须)
 
 #### 3. 配置 Webhook (Zoho Cliq Webhook)
 1. 在 Zoho Cliq 中设置 **Bot** 或 **Outgoing Webhook**。
