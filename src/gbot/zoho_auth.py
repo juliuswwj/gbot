@@ -49,3 +49,78 @@ class ZohoAuth:
         except Exception as e:
             logger.error(f"Error refreshing Zoho token: {e}")
             return None
+
+    def generate_refresh_token(self, code):
+        """Exchange authorization code for a refresh token and save it to config."""
+        try:
+            data = {
+                "code": code,
+                "client_id": self.client_id,
+                "client_secret": self.client_secret,
+                "grant_type": "authorization_code"
+            }
+            # redirect_uri might be required depending on Zoho app configuration
+            redirect_uri = self.config.zoho.get("redirect_uri")
+            if redirect_uri:
+                data["redirect_uri"] = redirect_uri
+            
+            logger.info(f"Requesting refresh_token from Zoho...")
+            response = requests.post(self.accounts_url, data=data)
+            response.raise_for_status()
+            res_json = response.json()
+            
+            if "refresh_token" in res_json:
+                refresh_token = res_json["refresh_token"]
+                self.refresh_token = refresh_token
+                self._update_config_file(refresh_token)
+                print(f"\n✅ Success: New refresh_token has been saved to your configuration.")
+                return refresh_token
+            else:
+                print(f"\n❌ Error: Zoho did not return a refresh_token.")
+                print(f"Response: {res_json}")
+                return None
+        except Exception as e:
+            print(f"\n❌ Error during token exchange: {e}")
+            return None
+
+    def _update_config_file(self, refresh_token):
+        """Update the refresh_token in the YAML config file."""
+        import yaml
+        from gbot.config import DEFAULT_CONFIG_PATH
+        
+        path = os.getenv("GBOT_CONFIG_PATH", DEFAULT_CONFIG_PATH)
+        if not os.path.exists(path):
+            # Final fallback check
+            path = "/etc/gbot/config.yml"
+
+        if not os.path.exists(path):
+            logger.error(f"Could not find config file to update at {path}")
+            return
+
+        try:
+            with open(path, "r") as f:
+                data = yaml.safe_load(f) or {}
+
+            if "zoho" not in data:
+                data["zoho"] = {}
+            data["zoho"]["refresh_token"] = refresh_token
+
+            with open(path, "w") as f:
+                yaml.safe_dump(data, f, default_flow_style=False, allow_unicode=True)
+            logger.info(f"Successfully updated {path}")
+        except Exception as e:
+            logger.error(f"Failed to write to config file: {e}")
+
+if __name__ == "__main__":
+    import argparse
+    from gbot.config import load_config
+    
+    logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
+    
+    parser = argparse.ArgumentParser(description="Zoho OAuth2 Token Utility")
+    parser.add_argument("code", help="The authorization code from Zoho's OAuth2 consent page")
+    args = parser.parse_args()
+    
+    config = load_config()
+    auth = ZohoAuth(config)
+    auth.generate_refresh_token(args.code)
