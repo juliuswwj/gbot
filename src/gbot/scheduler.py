@@ -14,17 +14,20 @@ class GbotScheduler:
 
     def schedule_child_rest(self, child_name, devices, end_time):
         """Schedule rest time for a specific child and all their devices."""
-        # If no devices provided, try to find them from config
-        if not devices:
-            for child in self.config.get_children():
-                if child.get("name") == child_name:
+        child_email = None
+        # Always try to find the child's contact email and devices from config
+        for child in self.config.get_children():
+            if child.get("name") == child_name:
+                child_email = child.get("contact")
+                if not devices:
                     devices = child.get("devices", [])
-                    break
+                break
         
         self.active_sessions[child_name] = {
             "devices": devices,
             "end_time": end_time,
-            "warned": False
+            "warned": False,
+            "email": child_email
         }
         logger.info(f"Scheduled rest session for {child_name} until {end_time}")
 
@@ -54,7 +57,7 @@ class GbotScheduler:
                     msg = await self.chat.brain_callback(prompt, language=self.config.cron_chat_language)
                     
                     header = "📊 Daily Report" if self.config.cron_chat_language.startswith("en") else "📊 小孩上网日报"
-                    await self.chat.send_message(f"{header} ({yesterday}):\n{msg}", chat_id=self.config.cron_chat_id)
+                    await self.chat.send_message(f"{header} ({yesterday}):\n{msg}", recipient=self.config.cron_chat_id)
                 except Exception as e:
                     logger.error(f"Failed to generate daily report: {e}")
                 await asyncio.sleep(65) # Avoid double triggers
@@ -75,7 +78,10 @@ class GbotScheduler:
                     if rules:
                         try:
                             await self.gmon.call_tool("set_ip_forwarding", {"rules": rules})
-                            await self.chat.send_message(f"🛑 {child} 的休息时间到了，网络已断开。", chat_id=self.config.cron_chat_id)
+                            msg = f"🛑 {child} 的休息时间到了，网络已断开。"
+                            await self.chat.send_message(msg, recipient=self.config.cron_chat_id)
+                            if data.get("email"):
+                                await self.chat.send_message(msg, recipient=data["email"])
                         except Exception as e:
                             logger.error(f"Failed to block devices for {child}: {e}")
                     
@@ -84,7 +90,10 @@ class GbotScheduler:
                 # Check if warning needed (5 mins before)
                 elif now >= end_time - timedelta(minutes=5) and not data["warned"]:
                     logger.info(f"Sending 5-minute warning for {child}")
-                    await self.chat.send_message(f"⚠️ 提示: {child}，还有 5 分钟休息。请尽快收尾！", chat_id=self.config.cron_chat_id)
+                    msg = f"⚠️ 提示: {child}，还有 5 分钟休息。请尽快收尾！"
+                    await self.chat.send_message(msg, recipient=self.config.cron_chat_id)
+                    if data.get("email"):
+                        await self.chat.send_message(msg, recipient=data["email"])
                     self.active_sessions[child]["warned"] = True
             
             await asyncio.sleep(30) # Check every 30 seconds

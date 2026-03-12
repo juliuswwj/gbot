@@ -19,33 +19,11 @@ class ZohoCliqChannel:
         self.port = config.system.get("webhook_port", 8080)
         self.webhook_token = config.webhook_token
         
-        self.user_chat_db = config.user_chat_db
-        self.user_chat_map = self._load_user_chats()
-        
         self.app = web.Application()
         self.app.router.add_post('/bot/mail', self.handle_webhook)
         self.app.router.add_post('/bot/chat', self.handle_chat_webhook)
         self.runner = None
         self._test_mode_processed = False
-
-    def _load_user_chats(self):
-        """Load email to chat_id mapping from file."""
-        if os.path.exists(self.user_chat_db):
-            try:
-                with open(self.user_chat_db, 'r') as f:
-                    return json.load(f)
-            except Exception as e:
-                logger.error(f"Failed to load user chat DB: {e}")
-        return {}
-
-    def _save_user_chats(self):
-        """Save current mapping to file."""
-        try:
-            os.makedirs(os.path.dirname(self.user_chat_db), exist_ok=True)
-            with open(self.user_chat_db, 'w') as f:
-                json.dump(self.user_chat_map, f)
-        except Exception as e:
-            logger.error(f"Failed to save user chat DB: {e}")
 
     async def _check_auth(self, request):
         """Validate Bearer Token if configured."""
@@ -63,8 +41,10 @@ class ZohoCliqChannel:
         if not await self._check_auth(request):
             return web.Response(status=401, text="Unauthorized")
 
+        body = await request.read()
+
         try:
-            data = await request.json()
+            data = json.loads(body.decode('utf-8', errors='replace'), strict=False)
             # Zoho Webhook JSON (Mail): {from, subject, content, id}
             sender_email = data.get('from', '').lower()
             subject = data.get('subject', '')
@@ -79,24 +59,16 @@ class ZohoCliqChannel:
                 logger.warning(f"Ignoring mail from non-parent sender: {sender_email}")
                 return web.Response(text="Sender not authorized")
 
-            # 2. Lookup chat_id
-            chat_id = self.user_chat_map.get(sender_email)
-            if not chat_id:
-                logger.warning(f"No Cliq chat_id found for parent {sender_email}. Please chat with the bot once.")
-            
-            # 3. Process command via Brain
+            # 2. Process command via Brain
             response = await self.brain_callback(f"{subject}\n{content}")
             
-            # 4. Send result back to Zoho Cliq if chat_id is known
-            if chat_id:
-                await self.send_message(f"Processed mail from {sender_email}:\n{response}", chat_id=chat_id)
-            else:
-                logger.info(f"LLM Response (No chat_id): {response}")
+            # 3. Send result back to Zoho Cliq (DM to sender)
+            await self.send_message(f"Processed mail from {sender_email}:\n{response}", recipient=sender_email)
             
             self._test_mode_processed = True
             return web.Response(text="OK")
         except Exception as e:
-            logger.exception(f"Error processing mail webhook")
+            logger.exception(f"Error processing mail webhook {data}")
             return web.Response(status=500, text=str(e))
 
     async def handle_chat_webhook(self, request):
@@ -108,10 +80,9 @@ class ZohoCliqChannel:
         
 
         try:
-            data = await request.json()
+            data = json.loads(body.decode('utf-8', errors='replace'), strict=False)
             # Zoho Cliq Structure: {chat: {id}, user: {first_name, email}, message: {text}, handler: "message"}
             
-            logger.info(f"Received Zoho Cliq Webhook: {data}")
             chat_info = data.get('chat', {})
             user_info = data.get('user', {})
             msg_info = data.get('message', {})
@@ -121,6 +92,16 @@ class ZohoCliqChannel:
             chat_type = chat_info.get('type') # 'bot' or 'channel'
             email = user_info.get('email', '').lower()
             user_name = user_info.get('first_name', 'User')
+            timezone = user_info.get('timezone')
+            # Zoho might put recent_messages at top level or inside 'chat'
+            recent_msgs = data.get('recent_messages') or chat_info.get('recent_messages') or []
+            
+            # Format history for LLM (last 5 messages)
+            history_str = ""
+            for m in recent_msgs[-5:]:
+                sender = m.get('sender', {}).get('name', 'Unknown')
+                text = m.get('text', '')
+                history_str += f"[{sender}]: {text}\n"
 
             if handler == 'function':
                 # For buttons/cards, extract from action data
@@ -134,34 +115,29 @@ class ZohoCliqChannel:
             
             logger.info(f"Received {handler} from {user_name} ({email}) in chat {chat_id}")
             
-            # Update mapping ONLY for DM messages (not mentions or functions)
-            if handler == 'message' and email and chat_id:
-                if self.user_chat_map.get(email) != chat_id:
-                    self.user_chat_map[email] = chat_id
-                    self._save_user_chats()
-            
             if not text:
                 return web.Response(text="No text provided")
 
             # Process command via Brain in background
-            asyncio.create_task(self._process_and_reply(text, chat_id, chat_type=chat_type, email=email))
+            asyncio.create_task(self._process_and_reply(text, chat_id, chat_type=chat_type, email=email, timezone=timezone, history=history_str))
             
             # Return immediate response
             return web.json_response({
                 "text": "⏳ 收到，正在处理中..."
             })
         except Exception as e:
-            logger.exception(f"Error processing chat webhook")
+            logger.exception(f"Error processing chat webhook {body}")
             return web.Response(status=500, text=str(e))
 
-    async def _process_and_reply(self, text, chat_id, chat_type=None, email=None):
+    async def _process_and_reply(self, text, chat_id, chat_type=None, email=None, timezone=None, history=None):
         """Process command via Brain and send reply back to chat."""
         try:
             language = self.config.get_user_language(email) if email else "zh_cn"
-            response = await self.brain_callback(text, language=language)
-            await self.send_message(response, chat_id=chat_id, chat_type=chat_type)
+            response = await self.brain_callback(text, language=language, timezone=timezone, history=history)
+            recipient = email if chat_type == 'bot' and email else chat_id
+            await self.send_message(response, recipient=recipient)
         except Exception as e:
-            logger.error(f"Error in background processing for chat {chat_id}: {e}")
+            logger.exception(f"Error in background processing for chat {chat_id}")
         finally:
             self._test_mode_processed = True
 
@@ -185,10 +161,10 @@ class ZohoCliqChannel:
             while True:
                 await asyncio.sleep(3600)
 
-    async def send_message(self, content, chat_id=None, chat_type=None):
-        """Send a message to Zoho Cliq. Handles both Chat/Channel IDs and User DMs."""
-        if not chat_id:
-            logger.info(f"Zoho Cliq (No Chat ID, logging only): {content}")
+    async def send_message(self, content, recipient=None):
+        """Send a message to Zoho Cliq. Handles both Chat/Channel IDs and User DMs (recipient)."""
+        if not recipient:
+            logger.info(f"Zoho Cliq (No Recipient, logging only): {content}")
             return
 
         access_token = self.auth.get_access_token()
@@ -209,10 +185,8 @@ class ZohoCliqChannel:
                 "Content-Type": "application/json"
             }
 
-            # Use chat_type if provided (from webhook), otherwise infer from chat_id format
-            # User confirmed that CT_ doesn't uniquely identify Channel vs DM.
-            # If chat_type is 'bot', it's a DM. If it's 'channel' or 'group', it uses /chats.
-            is_dm = (chat_type == 'bot') or (not chat_id.startswith("CT_") and "@" in chat_id)
+            # If recipient contains @, it is an email (DM), otherwise it is a chat_id (Channel)
+            is_dm = "@" in recipient
 
             if is_dm:
                 # Endpoint for sending to user(s) from bot directly
@@ -220,26 +194,18 @@ class ZohoCliqChannel:
                     logger.error("bot_unique_name missing in config, cannot send DM.")
                     return
                 url = f"{self.base_url}/bots/{bot_name}/message"
-                # If we have an email address or ZUID, use it. 
-                if "@" in chat_id:
-                    payload["userids"] = chat_id
-                else:
-                    # If we only have CT_ ID but know it's a bot chat, 
-                    # we should still try to use the /bots endpoint as requested.
-                    # Note: /bots endpoint usually expects userids (email/zuid).
-                    # If chat_id is CT_..., it might NOT work as userids.
-                    payload["userids"] = chat_id 
+                payload["userids"] = recipient
             else:
                 # Endpoint for specific chat (Channel/Group via chat_id)
-                url = f"{self.base_url}/chats/{chat_id}/message"
+                url = f"{self.base_url}/chats/{recipient}/message"
                 if bot_name:
                     url += f"?bot_unique_name={bot_name}"
 
             async with aiohttp.ClientSession() as session:
                 async with session.post(url, json=payload, headers=headers) as resp:
                     if resp.status in [200, 204]:
-                        logger.info(f"Successfully sent message to Zoho Cliq {chat_id}.")
+                        logger.info(f"Successfully sent message to {url}")
                     else:
-                        logger.error(f"Failed to send to Zoho Cliq ({chat_id}): {resp.status} {await resp.text()}")
+                        logger.error(f"Failed to send to {url}: {resp.status} {await resp.text()}")
         except Exception as e:
             logger.error(f"Zoho Cliq send error: {e}")

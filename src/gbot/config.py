@@ -39,10 +39,6 @@ class GbotConfig:
         return self.system.get("interface", "eth0")
 
     @property
-    def user_chat_db(self):
-        return self.get_path("user_chat_db", "user_chats.json")
-
-    @property
     def cron_chat_id(self):
         return self.zoho.get("cron_chat_id")
 

@@ -24,28 +24,19 @@ class GbotApp:
             
         # Initialize Brain
         self.brain = GeminiBrain(self.config)
+        self.brain.gmon = self.gmon
         
         # Initialize Channels (Dynamic imports to avoid ModuleNotFoundError in test environments)
-        if not self.is_test:
-            from gbot.channels.zoho_cliq import ZohoCliqChannel
-            from gbot.calendar_sync import CalendarSync
-            from gbot.zoho_auth import ZohoAuth
-            
-            self.auth = ZohoAuth(self.config)
-            self.chat = ZohoCliqChannel(self.config, self.brain.query, auth=self.auth)
-            self.scheduler = GbotScheduler(self.config, self.gmon, self.chat)
-            self.calendar = CalendarSync(self.config, self.scheduler, auth=self.auth)
-        else:
-            # For integration testing with real APIs in test mode
-            from gbot.channels.zoho_cliq import ZohoCliqChannel
-            from gbot.zoho_auth import ZohoAuth
-            
-            self.auth = ZohoAuth(self.config)
-            self.chat = ZohoCliqChannel(self.config, self.brain.query, auth=self.auth)
-            self.scheduler = GbotScheduler(self.config, self.gmon, self.chat)
-            
-            # For calendar we still use a mock in test mode unless specifically needed
-            self.calendar = MagicMockAsync()
+        from gbot.channels.zoho_cliq import ZohoCliqChannel
+        from gbot.calendar_sync import CalendarSync
+        from gbot.zoho_auth import ZohoAuth
+        
+        self.auth = ZohoAuth(self.config)
+        self.chat = ZohoCliqChannel(self.config, self.brain.query, auth=self.auth)
+        self.scheduler = GbotScheduler(self.config, self.gmon, self.chat)
+        self.brain.scheduler = self.scheduler
+        self.calendar = CalendarSync(self.config, self.scheduler, auth=self.auth)
+        self.brain.calendar = self.calendar
 
     async def run(self):
         logger.info(f"Starting gbot (Test Mode: {self.is_test})")
@@ -89,15 +80,6 @@ class GbotApp:
             logger.info("Shutdown requested.")
         finally:
             await self.gmon.disconnect()
-
-class MagicMockAsync:
-    """A minimal mock that allows calling methods and awaiting them."""
-    def __getattr__(self, name):
-        async def mock_coro(*args, **kwargs):
-            return None
-        return mock_coro
-    async def mock_loop(self):
-        while True: await asyncio.sleep(3600)
 
 async def main():
     parser = argparse.ArgumentParser(description="gbot Intelligent Gateway")

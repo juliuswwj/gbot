@@ -14,7 +14,6 @@ class TestZohoCliqChannel(unittest.IsolatedAsyncioTestCase):
         self.config.zoho = {"region": "com"}
         self.config.system = {"webhook_port": 8080}
         self.config.webhook_token = "test_token"
-        self.config.user_chat_db = "/tmp/user_chats.json"
         self.config.bot_unique_name = "test_bot"
         
         # Default language mock
@@ -23,28 +22,44 @@ class TestZohoCliqChannel(unittest.IsolatedAsyncioTestCase):
         # Mock ZohoAuth to avoid actual auth attempts
         with patch('src.gbot.channels.zoho_cliq.ZohoAuth'):
             self.channel = ZohoCliqChannel(self.config, self.brain_callback)
-        
-        # Mock _save_user_chats and _load_user_chats
-        self.channel._save_user_chats = MagicMock()
-        self.channel.user_chat_map = {}
 
     async def _simulate_post(self, data):
         """Helper to simulate an aiohttp POST request."""
         mock_request = MagicMock()
+        payload = json.dumps(data).encode('utf-8')
         mock_request.json = AsyncMock(return_value=data)
         mock_request.headers = {"Authorization": f"Bearer {self.config.webhook_token}"}
         
-        # Mock read() for _check_auth
-        mock_request.read = AsyncMock(return_value=b"")
+        # Mock read() to return the actual JSON payload
+        mock_request.read = AsyncMock(return_value=payload)
         
         # Mock _check_auth to always return True for simplicity in this test
         with patch.object(ZohoCliqChannel, '_check_auth', return_value=True):
             response = await self.channel.handle_chat_webhook(mock_request)
             return response
 
+    async def test_handle_chat_webhook_with_literal_newline(self):
+        # Zoho sometimes sends literal control characters in JSON strings
+        # We simulate this by manually crafting the payload bytes
+        payload_with_newline = b'{"handler":"message","message":{"text":"Hello\nWorld"},"chat":{"id":"C1"},"user":{"email":"user@example.com"}}'
+        
+        mock_request = MagicMock()
+        mock_request.read = AsyncMock(return_value=payload_with_newline)
+        mock_request.headers = {"Authorization": f"Bearer {self.config.webhook_token}"}
+        
+        # We need to mock _process_and_reply to avoid background tasks
+        with patch.object(ZohoCliqChannel, '_check_auth', return_value=True):
+            with patch.object(self.channel, '_process_and_reply', new_callable=AsyncMock) as mock_process:
+                response = await self.channel.handle_chat_webhook(mock_request)
+                
+                self.assertEqual(response.status, 200)
+                mock_process.assert_called_once()
+                args, kwargs = mock_process.call_args
+                self.assertEqual(args[0], "Hello\nWorld")
+
     @patch('src.gbot.channels.zoho_cliq.logger')
     async def test_send_message_bot_dm(self, mock_logger):
-        # When chat_type is 'bot', it should use the /bots endpoint even if chat_id starts with CT_
+        # When recipient contains @, it should use the /bots endpoint (DM)
         self.channel.auth.get_access_token.return_value = "fake_token"
         
         with patch('aiohttp.ClientSession.post') as mock_post:
@@ -52,16 +67,16 @@ class TestZohoCliqChannel(unittest.IsolatedAsyncioTestCase):
             mock_resp.status = 200
             mock_post.return_value.__aenter__.return_value = mock_resp
             
-            await self.channel.send_message("hello", chat_id="CT_123", chat_type="bot")
+            await self.channel.send_message("hello", recipient="user@example.com")
             
             args, kwargs = mock_post.call_args
             url = args[0]
             self.assertIn("/bots/test_bot/message", url)
-            self.assertEqual(kwargs['json'], {"text": "hello", "userids": "CT_123"})
+            self.assertEqual(kwargs['json'], {"text": "hello", "userids": "user@example.com"})
 
     @patch('src.gbot.channels.zoho_cliq.logger')
     async def test_send_message_channel(self, mock_logger):
-        # When chat_type is 'channel', it should use the /chats endpoint
+        # When recipient does NOT contain @, it should use the /chats endpoint
         self.channel.auth.get_access_token.return_value = "fake_token"
         
         with patch('aiohttp.ClientSession.post') as mock_post:
@@ -69,7 +84,7 @@ class TestZohoCliqChannel(unittest.IsolatedAsyncioTestCase):
             mock_resp.status = 200
             mock_post.return_value.__aenter__.return_value = mock_resp
             
-            await self.channel.send_message("hello", chat_id="CT_123", chat_type="channel")
+            await self.channel.send_message("hello", recipient="CT_123")
             
             args, kwargs = mock_post.call_args
             url = args[0]
@@ -77,8 +92,34 @@ class TestZohoCliqChannel(unittest.IsolatedAsyncioTestCase):
             self.assertIn("bot_unique_name=test_bot", url)
 
     @patch('src.gbot.channels.zoho_cliq.logger')
+    async def test_webhook_passes_timezone(self, mock_logger):
+        # Test that the webhook correctly extracts and passes timezone
+        data = {
+            'handler': 'message',
+            'message': 'ping',
+            'user': {
+                'email': 'test@example.com', 
+                'first_name': 'Test',
+                'timezone': 'America/Los_Angeles'
+            },
+            'chat': {'id': 'CT_123', 'type': 'bot'}
+        }
+        self.brain_callback.return_value = "pong"
+        
+        with patch.object(self.channel, '_process_and_reply', new_callable=AsyncMock) as mock_process:
+            # We need to mock _check_auth
+            with patch.object(ZohoCliqChannel, '_check_auth', return_value=True):
+                await self._simulate_post(data)
+                # Wait for the task to be created and "run"
+                await asyncio.sleep(0.1)
+                
+                mock_process.assert_called_once()
+                kwargs = mock_process.call_args.kwargs
+                self.assertEqual(kwargs['timezone'], 'America/Los_Angeles')
+
+    @patch('src.gbot.channels.zoho_cliq.logger')
     async def test_webhook_passes_chat_type(self, mock_logger):
-        # Test that the webhook correctly extracts and passes chat_type
+        # Test that the webhook correctly extracts and passes recipient (email for DM)
         data = {
             'handler': 'message',
             'message': 'ping',
@@ -91,7 +132,7 @@ class TestZohoCliqChannel(unittest.IsolatedAsyncioTestCase):
             await self._simulate_post(data)
             await asyncio.sleep(0.1)
             
-            mock_send.assert_called_once_with("pong", chat_id='CT_123', chat_type='bot')
+            mock_send.assert_called_once_with("pong", recipient='test@example.com')
 
 if __name__ == '__main__':
     unittest.main()
