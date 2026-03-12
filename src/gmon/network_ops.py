@@ -167,8 +167,7 @@ class BPFManager:
                 return False
 
             logger.info(f"Loading eBPF program {self.bpf_path} on {self.interface}...")
-            # Explicitly add include paths for libbpf headers on some distributions
-            self.bpf = BPF(src_file=self.bpf_path, cflags=["-I/usr/include"])
+            self.bpf = BPF(src_file=self.bpf_path)
             
             # Attach to TC (Traffic Control) ingress/egress
             # Note: In a real system, we might need to use 'tc' command via subprocess 
