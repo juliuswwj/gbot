@@ -118,6 +118,7 @@ class ZohoCliqChannel:
             handler = data.get('handler', 'message')
             
             chat_id = chat_info.get('id')
+            chat_type = chat_info.get('type') # 'bot' or 'channel'
             email = user_info.get('email', '').lower()
             user_name = user_info.get('first_name', 'User')
 
@@ -143,7 +144,7 @@ class ZohoCliqChannel:
                 return web.Response(text="No text provided")
 
             # Process command via Brain in background
-            asyncio.create_task(self._process_and_reply(text, chat_id, email=email))
+            asyncio.create_task(self._process_and_reply(text, chat_id, chat_type=chat_type, email=email))
             
             # Return immediate response
             return web.json_response({
@@ -153,12 +154,12 @@ class ZohoCliqChannel:
             logger.exception(f"Error processing chat webhook")
             return web.Response(status=500, text=str(e))
 
-    async def _process_and_reply(self, text, chat_id, email=None):
+    async def _process_and_reply(self, text, chat_id, chat_type=None, email=None):
         """Process command via Brain and send reply back to chat."""
         try:
             language = self.config.get_user_language(email) if email else "zh_cn"
             response = await self.brain_callback(text, language=language)
-            await self.send_message(response, chat_id=chat_id)
+            await self.send_message(response, chat_id=chat_id, chat_type=chat_type)
         except Exception as e:
             logger.error(f"Error in background processing for chat {chat_id}: {e}")
         finally:
@@ -184,7 +185,7 @@ class ZohoCliqChannel:
             while True:
                 await asyncio.sleep(3600)
 
-    async def send_message(self, content, chat_id=None):
+    async def send_message(self, content, chat_id=None, chat_type=None):
         """Send a message to Zoho Cliq. Handles both Chat/Channel IDs and User DMs."""
         if not chat_id:
             logger.info(f"Zoho Cliq (No Chat ID, logging only): {content}")
@@ -208,24 +209,31 @@ class ZohoCliqChannel:
                 "Content-Type": "application/json"
             }
 
-            # Check if chat_id is a Zoho Chat/Channel ID (usually starts with CT_, etc.)
-            # Or if it's an email/ZUID for a DM.
-            # Zoho Chat IDs for bots usually look like 'CT_...'
-            is_chat = chat_id.startswith("CT_")
+            # Use chat_type if provided (from webhook), otherwise infer from chat_id format
+            # User confirmed that CT_ doesn't uniquely identify Channel vs DM.
+            # If chat_type is 'bot', it's a DM. If it's 'channel' or 'group', it uses /chats.
+            is_dm = (chat_type == 'bot') or (not chat_id.startswith("CT_") and "@" in chat_id)
 
-            if is_chat:
-                # Endpoint for specific chat (Channel/Group/DM via chat_id)
-                url = f"{self.base_url}/chats/{chat_id}/message"
-                if bot_name:
-                    url += f"?bot_unique_name={bot_name}"
-            else:
+            if is_dm:
                 # Endpoint for sending to user(s) from bot directly
-                # If chat_id is an email, it's a DM.
                 if not bot_name:
                     logger.error("bot_unique_name missing in config, cannot send DM.")
                     return
                 url = f"{self.base_url}/bots/{bot_name}/message"
-                payload["userids"] = chat_id # can be email or ZUID
+                # If we have an email address or ZUID, use it. 
+                if "@" in chat_id:
+                    payload["userids"] = chat_id
+                else:
+                    # If we only have CT_ ID but know it's a bot chat, 
+                    # we should still try to use the /bots endpoint as requested.
+                    # Note: /bots endpoint usually expects userids (email/zuid).
+                    # If chat_id is CT_..., it might NOT work as userids.
+                    payload["userids"] = chat_id 
+            else:
+                # Endpoint for specific chat (Channel/Group via chat_id)
+                url = f"{self.base_url}/chats/{chat_id}/message"
+                if bot_name:
+                    url += f"?bot_unique_name={bot_name}"
 
             async with aiohttp.ClientSession() as session:
                 async with session.post(url, json=payload, headers=headers) as resp:

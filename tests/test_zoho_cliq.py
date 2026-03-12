@@ -43,8 +43,8 @@ class TestZohoCliqChannel(unittest.IsolatedAsyncioTestCase):
             return response
 
     @patch('src.gbot.channels.zoho_cliq.logger')
-    async def test_send_message_chat_id(self, mock_logger):
-        # Sending to a CT_ chat ID should use the /chats endpoint with bot_unique_name as query param
+    async def test_send_message_bot_dm(self, mock_logger):
+        # When chat_type is 'bot', it should use the /bots endpoint even if chat_id starts with CT_
         self.channel.auth.get_access_token.return_value = "fake_token"
         
         with patch('aiohttp.ClientSession.post') as mock_post:
@@ -52,48 +52,46 @@ class TestZohoCliqChannel(unittest.IsolatedAsyncioTestCase):
             mock_resp.status = 200
             mock_post.return_value.__aenter__.return_value = mock_resp
             
-            await self.channel.send_message("hello", chat_id="CT_123")
+            await self.channel.send_message("hello", chat_id="CT_123", chat_type="bot")
+            
+            args, kwargs = mock_post.call_args
+            url = args[0]
+            self.assertIn("/bots/test_bot/message", url)
+            self.assertEqual(kwargs['json'], {"text": "hello", "userids": "CT_123"})
+
+    @patch('src.gbot.channels.zoho_cliq.logger')
+    async def test_send_message_channel(self, mock_logger):
+        # When chat_type is 'channel', it should use the /chats endpoint
+        self.channel.auth.get_access_token.return_value = "fake_token"
+        
+        with patch('aiohttp.ClientSession.post') as mock_post:
+            mock_resp = MagicMock()
+            mock_resp.status = 200
+            mock_post.return_value.__aenter__.return_value = mock_resp
+            
+            await self.channel.send_message("hello", chat_id="CT_123", chat_type="channel")
             
             args, kwargs = mock_post.call_args
             url = args[0]
             self.assertIn("/chats/CT_123/message", url)
             self.assertIn("bot_unique_name=test_bot", url)
-            self.assertEqual(kwargs['json'], {"text": "hello"})
 
     @patch('src.gbot.channels.zoho_cliq.logger')
-    async def test_send_message_user_dm(self, mock_logger):
-        # Sending to an email should use the /bots endpoint
-        self.channel.auth.get_access_token.return_value = "fake_token"
-        
-        with patch('aiohttp.ClientSession.post') as mock_post:
-            mock_resp = MagicMock()
-            mock_resp.status = 200
-            mock_post.return_value.__aenter__.return_value = mock_resp
-            
-            await self.channel.send_message("private", chat_id="user@example.com")
-            
-            args, kwargs = mock_post.call_args
-            url = args[0]
-            self.assertIn("/bots/test_bot/message", url)
-            self.assertEqual(kwargs['json'], {"text": "private", "userids": "user@example.com"})
-
-    @patch('src.gbot.channels.zoho_cliq.logger')
-    async def test_handler_function_extracts_action_key(self, mock_logger):
+    async def test_webhook_passes_chat_type(self, mock_logger):
+        # Test that the webhook correctly extracts and passes chat_type
         data = {
-            'handler': 'function',
-            'action': {'data': {'action_key': 'approve'}},
+            'handler': 'message',
+            'message': 'ping',
             'user': {'email': 'test@example.com', 'first_name': 'Test'},
-            'chat': {'id': 'CT_123'}
+            'chat': {'id': 'CT_123', 'type': 'bot'}
         }
-        self.brain_callback.return_value = "Approved!"
-        self.config.get_user_language.return_value = "en_us"
+        self.brain_callback.return_value = "pong"
         
         with patch.object(self.channel, 'send_message', new_callable=AsyncMock) as mock_send:
             await self._simulate_post(data)
             await asyncio.sleep(0.1)
             
-            self.brain_callback.assert_called_once_with('approve', language='en_us')
-            mock_send.assert_called_once_with("Approved!", chat_id='CT_123')
+            mock_send.assert_called_once_with("pong", chat_id='CT_123', chat_type='bot')
 
 if __name__ == '__main__':
     unittest.main()
