@@ -1,5 +1,6 @@
-#include <uapi/linux/ptrace.h>
-#include <net/sock.h>
+#define KBUILD_MODNAME "gmon"
+#include <linux/types.h>
+#include <linux/pkt_cls.h>
 #include <bcc/proto.h>
 
 #define MAX_ENTRIES 10240
@@ -20,27 +21,33 @@ struct flow_stats {
     u64 last_seen;
 };
 
+// Wrapper for domain strings to avoid array syntax in BPF_HASH
+struct domain_name {
+    char name[MAX_DOMAIN_LEN];
+};
+
 // Maps for traffic stats
 BPF_HASH(active_flows, struct flow_key, struct flow_stats, MAX_ENTRIES);
 
 // Map for Domain names (IP -> Domain)
-BPF_HASH(dns_cache, u32, char[MAX_DOMAIN_LEN], MAX_ENTRIES);
+BPF_HASH(dns_cache, u32, struct domain_name, MAX_ENTRIES);
 
 // Map for SNI ( (IP, Port) -> Domain )
 struct sni_key {
     u32 ip;
     u16 dport;
 };
-BPF_HASH(sni_cache, struct sni_key, char[MAX_DOMAIN_LEN], MAX_ENTRIES);
+BPF_HASH(sni_cache, struct sni_key, struct domain_name, MAX_ENTRIES);
 
 // Map for restricted domains (Key: Domain, Value: Action)
-BPF_HASH(blocked_domains, char[MAX_DOMAIN_LEN], u8, 1024);
+BPF_HASH(blocked_domains, struct domain_name, u8, 1024);
 
 int gmon_tc_main(struct __sk_buff *skb) {
     u8 *cursor = 0;
 
+    // Check if it is an IPv4 packet
     struct ethernet_t *eth = cursor_advance(cursor, sizeof(*eth));
-    if (eth->type != 0x0800) return TC_ACT_OK; // Only IPv4
+    if (eth->type != 0x0800) return TC_ACT_OK;
 
     struct ip_t *ip = cursor_advance(cursor, sizeof(*ip));
     
