@@ -4,7 +4,53 @@
 
 #include <linux/types.h>
 #include <linux/pkt_cls.h>
-#include <bcc/proto.h>
+
+// Replacement for bcc/proto.h
+#define cursor_advance(_cursor, _len) \
+  ({ void *_tmp = _cursor; _cursor += _len; _tmp; })
+
+struct ethernet_t {
+    unsigned long long dst:48;
+    unsigned long long src:48;
+    unsigned int type:16;
+} __attribute__((packed));
+
+struct ip_t {
+    unsigned char hlen:4;
+    unsigned char ver:4;
+    unsigned char tos;
+    unsigned short tlen;
+    unsigned short identification;
+    unsigned short ffo_unused:1;
+    unsigned short df:1;
+    unsigned short mf:1;
+    unsigned short foffset:13;
+    unsigned char ttl;
+    unsigned char nextp;
+    unsigned short hchecksum;
+    unsigned int src;
+    unsigned int dst;
+} __attribute__((packed));
+
+struct tcp_t {
+    unsigned short src_port;
+    unsigned short dst_port;
+    unsigned int seq;
+    unsigned int ack;
+    unsigned char offset:4;
+    unsigned char reserved:4;
+    unsigned char flags;
+    unsigned short window;
+    unsigned short checksum;
+    unsigned short urgent_ptr;
+} __attribute__((packed));
+
+struct udp_t {
+    unsigned short sport;
+    unsigned short dport;
+    unsigned short length;
+    unsigned short crc;
+} __attribute__((packed));
 
 #define MAX_ENTRIES 10240
 #define MAX_DOMAIN_LEN 64
@@ -46,13 +92,17 @@ BPF_HASH(sni_cache, struct sni_key, struct domain_name, MAX_ENTRIES);
 BPF_HASH(blocked_domains, struct domain_name, u8, 1024);
 
 int gmon_tc_main(struct __sk_buff *skb) {
-    u8 *cursor = 0;
+    void *cursor = (void *)(long)skb->data;
+    void *data_end = (void *)(long)skb->data_end;
 
-    // Check if it is an IPv4 packet
+    // Ethernet
     struct ethernet_t *eth = cursor_advance(cursor, sizeof(*eth));
+    if ((void *)eth + sizeof(*eth) > data_end) return TC_ACT_OK;
     if (eth->type != 0x0800) return TC_ACT_OK;
 
+    // IP
     struct ip_t *ip = cursor_advance(cursor, sizeof(*ip));
+    if ((void *)ip + sizeof(*ip) > data_end) return TC_ACT_OK;
     
     struct flow_key key = {
         .saddr = ip->src,
@@ -62,10 +112,12 @@ int gmon_tc_main(struct __sk_buff *skb) {
 
     if (ip->nextp == 6) { // TCP
         struct tcp_t *tcp = cursor_advance(cursor, sizeof(*tcp));
-        key.dport = tcp->dst_port; // In BCC's proto.h, tcp_t has dst_port
+        if ((void *)tcp + sizeof(*tcp) > data_end) return TC_ACT_OK;
+        key.dport = tcp->dst_port;
     } else if (ip->nextp == 17) { // UDP
         struct udp_t *udp = cursor_advance(cursor, sizeof(*udp));
-        key.dport = udp->dport;    // In BCC's proto.h, udp_t has dport
+        if ((void *)udp + sizeof(*udp) > data_end) return TC_ACT_OK;
+        key.dport = udp->dport;
     } else {
         return TC_ACT_OK;
     }
