@@ -1,4 +1,7 @@
+#ifndef KBUILD_MODNAME
 #define KBUILD_MODNAME "gmon"
+#endif
+
 #include <linux/types.h>
 #include <linux/pkt_cls.h>
 #include <bcc/proto.h>
@@ -59,10 +62,10 @@ int gmon_tc_main(struct __sk_buff *skb) {
 
     if (ip->nextp == 6) { // TCP
         struct tcp_t *tcp = cursor_advance(cursor, sizeof(*tcp));
-        key.dport = tcp->dst_port;
+        key.dport = tcp->dst_port; // In BCC's proto.h, tcp_t has dst_port
     } else if (ip->nextp == 17) { // UDP
         struct udp_t *udp = cursor_advance(cursor, sizeof(*udp));
-        key.dport = udp->dst_port;
+        key.dport = udp->dport;    // In BCC's proto.h, udp_t has dport
     } else {
         return TC_ACT_OK;
     }
