@@ -177,13 +177,23 @@ class BPFManager:
             
             # Simple way to attach via subprocess if high-level API is finicky
             subprocess.run(["tc", "qdisc", "add", "dev", self.interface, "clsact"], check=False)
-            subprocess.run([
+            
+            obj_path = self.bpf_path.replace(".c", ".o")
+            if not os.path.exists(obj_path):
+                logger.error(f"BPF object file not found at {obj_path}. Did you run compilation?")
+                return False
+
+            result = subprocess.run([
                 "tc", "filter", "add", "dev", self.interface, "ingress", 
-                "bpf", "da", "obj", "src/gmon/ebpf/gmon.bpf.o", "sec", "tc"
-            ], check=False)
+                "bpf", "da", "obj", obj_path, "sec", "tc"
+            ], check=False, capture_output=True, text=True)
+            
+            if result.returncode != 0:
+                logger.error(f"Failed to attach BPF via tc: {result.stderr}")
+                return False
             
             self.is_loaded = True
-            logger.info("eBPF program loaded.")
+            logger.info("eBPF program loaded and attached.")
             return True
         except ImportError:
             logger.error("BCC (python3-bpfcc) not installed. Cannot load eBPF.")
