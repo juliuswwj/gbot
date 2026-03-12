@@ -169,42 +169,43 @@ class BPFManager:
             logger.info(f"Loading eBPF program {self.bpf_path} on {self.interface}...")
             self.bpf = BPF(src_file=self.bpf_path)
             
-            # Attach to TC (Traffic Control) ingress
             # 1. Ensure clsact qdisc exists (ignoring errors if it already does)
             subprocess.run(["tc", "qdisc", "add", "dev", self.interface, "clsact"], 
                            stderr=subprocess.DEVNULL, check=False)
             
-            try:
-                # 2. Prefer BCC's high-level API for attaching
-                fn = self.bpf.load_func("gmon_tc_main", BPF.SCHED_CLS)
-                self.bpf.attach_tc(self.interface, fn, direction=BPF.SCHED_CLS_INGRESS)
-                logger.info(f"eBPF program attached to {self.interface} via BCC.")
-            except Exception as bcc_err:
-                logger.warning(f"BCC attach_tc failed: {bcc_err}. Falling back to manual 'tc' command.")
-                
-                # Fallback to manual 'tc' command ONLY if .o exists
-                obj_path = self.bpf_path.replace(".c", ".o")
-                if not os.path.exists(obj_path):
-                    logger.error(f"Fallback failed: BPF object file not found at {obj_path}.")
-                    return False
+            # 2. Attach the function
+            fn = self.bpf.load_func("gmon_tc_main", BPF.SCHED_CLS)
+            
+            # Check for attach_tc attribute (available in BCC >= 0.11.0)
+            if hasattr(self.bpf, "attach_tc"):
+                try:
+                    self.bpf.attach_tc(self.interface, fn, direction=BPF.SCHED_CLS_INGRESS)
+                    logger.info(f"eBPF program attached to {self.interface} via BCC attach_tc.")
+                    self.is_loaded = True
+                    return True
+                except Exception as e:
+                    logger.warning(f"BCC attach_tc failed: {e}. Trying fallback.")
+            else:
+                logger.warning("BCC version too old: 'attach_tc' not found. Trying manual 'tc' command.")
 
+            # 3. Fallback to manual 'tc' command if BCC API is unavailable or failed
+            # Note: This requires the .o file to exist.
+            obj_path = self.bpf_path.replace(".c", ".o")
+            if os.path.exists(obj_path):
                 result = subprocess.run([
                     "tc", "filter", "add", "dev", self.interface, "ingress", 
                     "bpf", "da", "obj", obj_path, "sec", "tc"
                 ], capture_output=True, text=True, check=False)
                 
-                if result.returncode != 0:
+                if result.returncode == 0:
+                    logger.info(f"eBPF program attached to {self.interface} via manual 'tc' command.")
+                    self.is_loaded = True
+                    return True
+                else:
                     logger.error(f"Manual 'tc' attachment failed: {result.stderr}")
-                    return False
+            else:
+                logger.error(f"Fallback failed: BPF object file not found at {obj_path}. Please run 'test.sh' to compile it.")
 
-            self.is_loaded = True
-            logger.info("eBPF program loaded and attached.")
-            return True
-        except ImportError:
-            logger.error("BCC (python3-bpfcc) not installed. Cannot load eBPF.")
-            return False
-        except Exception as e:
-            logger.error(f"Failed to load eBPF: {e}")
             return False
         except ImportError:
             logger.error("BCC (python3-bpfcc) not installed. Cannot load eBPF.")
