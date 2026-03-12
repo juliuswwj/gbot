@@ -191,6 +191,24 @@ class BPFManager:
             # 3. Fallback to manual 'tc' command if BCC API is unavailable or failed
             # Note: This requires the .o file to exist.
             obj_path = self.bpf_path.replace(".c", ".o")
+            if not os.path.exists(obj_path):
+                logger.info(f"BPF object file missing at {obj_path}. Attempting to compile on the fly...")
+                try:
+                    import platform
+                    arch = platform.machine()
+                    include_path = f"-I/usr/include/{arch}-linux-gnu"
+                    # Try to compile
+                    comp_res = subprocess.run([
+                        "clang", "-O2", "-target", "bpf", include_path, "-I/usr/include", 
+                        "-c", self.bpf_path, "-o", obj_path
+                    ], capture_output=True, text=True, check=False)
+                    
+                    if comp_res.returncode != 0:
+                        logger.error(f"Auto-compilation failed: {comp_res.stderr}")
+                        # Don't return yet, maybe we can try one more thing or just fail later
+                except Exception as comp_err:
+                    logger.error(f"Error during auto-compilation: {comp_err}")
+
             if os.path.exists(obj_path):
                 result = subprocess.run([
                     "tc", "filter", "add", "dev", self.interface, "ingress", 
@@ -204,7 +222,7 @@ class BPFManager:
                 else:
                     logger.error(f"Manual 'tc' attachment failed: {result.stderr}")
             else:
-                logger.error(f"Fallback failed: BPF object file not found at {obj_path}. Please run 'test.sh' to compile it.")
+                logger.error(f"Fallback failed: BPF object file not found at {obj_path} and auto-compilation failed.")
 
             return False
         except ImportError:
