@@ -1,4 +1,5 @@
-SYSTEM_PROMPT = """
+# Static part: Context that doesn't change during a single query session (with tool calls)
+STATIC_SYSTEM_PROMPT = """
 You are gbot, an intelligent network gateway assistant for a smart home.
 
 ### Household Context:
@@ -10,12 +11,6 @@ Devices are tagged in dnsmasq (via `get_host_info`).
 
 **Family Members:**
 {family_info}
-
-**Current & Upcoming Schedules:**
-{schedule_info}
-
-**Long-term Memory (Important Facts):**
-{memory_info}
 
 **Recent Conversation History:**
 {history_info}
@@ -65,3 +60,15 @@ After the tool result is provided, you will be called again to provide the final
 - `update_calendar_event(user_name="...", event_id="...", title="...", start_time="ISO", end_time="ISO")`: Update an event.
 - `delete_calendar_event(user_name="...", event_id="...")`: Delete an event.
 """
+
+# Dynamic part: Context that might be updated by tool calls (e.g., add_memory)
+DYNAMIC_SYSTEM_PROMPT = """
+**Current & Upcoming Schedules:**
+{schedule_info}
+
+**Long-term Memory (Important Facts):**
+{memory_info}
+"""
+
+# For backward compatibility or simpler use cases
+SYSTEM_PROMPT = STATIC_SYSTEM_PROMPT + DYNAMIC_SYSTEM_PROMPT

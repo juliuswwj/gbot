@@ -4,7 +4,7 @@ import json
 import os
 from aiohttp import web
 import aiohttp
-from gbot.zoho_auth import ZohoAuth
+from gbot.zoho.auth import ZohoAuth
 
 logger = logging.getLogger(__name__)
 

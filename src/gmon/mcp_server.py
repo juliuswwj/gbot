@@ -6,7 +6,7 @@ import grp
 from datetime import date
 from mcp.server import Server
 from gmon.aggregator import TrafficAggregator
-from gmon.network_ops import DnsmasqManager, FirewallManager
+from gmon.network_ops import DnsmasqManager, FirewallManager, BPFManager
 from gmon.behavior_db import BehaviorDB
 from gmon.history_db import HistoryDB
 from mcp.types import Tool, TextContent
@@ -21,8 +21,9 @@ dnsmasq = DnsmasqManager()
 firewall = FirewallManager()
 behavior_db = BehaviorDB()
 history_db = HistoryDB()
+bpf_manager = BPFManager()
 
-# --- Tools Definition (Omitted for brevity, remains unchanged) ---
+# --- Tools Definition ---
 @app.list_tools()
 async def list_tools() -> list[Tool]:
     return [
@@ -70,10 +71,20 @@ async def handle_unix_client(reader, writer):
     await writer.wait_closed()
     logger.info("Client disconnected")
 
+async def bpf_polling_loop():
+    """Periodically pull data from BPF maps."""
+    while True:
+        bpf_instance = bpf_manager.get_bpf()
+        if bpf_instance:
+            try:
+                aggregator.process_ebpf_data(bpf_instance)
+            except Exception as e:
+                logger.error(f"Error processing BPF data: {e}")
+        await asyncio.sleep(5) # Poll every 5 seconds
+
 async def main():
     # Priority: ~/.gbot/gmon.sock for dev, /run/gbot/gmon.sock for production
     socket_path = os.path.expanduser("~/.gbot/gmon.sock")
-    # If we are root and /run/gbot exists, use that
     if os.getuid() == 0:
         if os.path.exists("/run/gbot"):
             socket_path = "/run/gbot/gmon.sock"
@@ -86,6 +97,11 @@ async def main():
         os.remove(socket_path)
 
     aggregator.update_host_map()
+    
+    # 1. Load eBPF
+    if not bpf_manager.load():
+        logger.warning("eBPF loading failed or skipped. Real-time stats might be unavailable.")
+
     server = await asyncio.start_unix_server(handle_unix_client, path=socket_path)
     
     # Secure Socket Permissions: Group 'gbot', Mode 660
@@ -99,8 +115,16 @@ async def main():
         os.chmod(socket_path, 0o666)
     
     logger.info(f"gmon MCP Server listening on {socket_path}")
-    async with server:
-        await server.serve_forever()
+    
+    # 2. Start BPF polling loop
+    asyncio.create_task(bpf_polling_loop())
+
+    try:
+        async with server:
+            await server.serve_forever()
+    finally:
+        # 3. Unload eBPF on exit
+        bpf_manager.unload()
 
 if __name__ == "__main__":
     asyncio.run(main())

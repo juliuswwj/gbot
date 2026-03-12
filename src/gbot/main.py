@@ -3,8 +3,8 @@ import logging
 import sys
 import argparse
 from gbot.config import load_config
-from gbot.mcp_client import GmonClient
-from gbot.mcp_mock import MockGmonClient
+from gbot.gmon import GmonClient
+from gbot.gmon_mock import MockGmonClient
 from gbot.brain import GeminiBrain
 from gbot.scheduler import GbotScheduler
 
@@ -27,9 +27,9 @@ class GbotApp:
         self.brain.gmon = self.gmon
         
         # Initialize Channels (Dynamic imports to avoid ModuleNotFoundError in test environments)
-        from gbot.channels.zoho_cliq import ZohoCliqChannel
-        from gbot.calendar_sync import CalendarSync
-        from gbot.zoho_auth import ZohoAuth
+        from gbot.zoho.cliq import ZohoCliqChannel
+        from gbot.zoho.calendar import CalendarSync
+        from gbot.zoho.auth import ZohoAuth
         
         self.auth = ZohoAuth(self.config)
         self.chat = ZohoCliqChannel(self.config, self.brain.query, auth=self.auth)

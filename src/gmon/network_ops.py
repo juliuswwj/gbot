@@ -120,6 +120,7 @@ class FirewallManager:
                 self._apply_iptables(ip, block=False)
                 self._clear_gaming_block(ip)
                 if ip in self.blocks: del self.blocks[ip]
+        self._save_blocks()
 
     def _apply_gaming_block(self, ip):
         # 1. Update eBPF maps with common gaming domains for this IP
@@ -144,3 +145,63 @@ class FirewallManager:
                 logger.info(f"Allowed IP: {ip}")
         except Exception as e:
             logger.error(f"Iptables error for {ip}: {e}")
+
+class BPFManager:
+    def __init__(self, interface="eth0", bpf_path="src/gmon/ebpf/gmon.bpf.c"):
+        self.interface = interface
+        self.bpf_path = bpf_path
+        self.bpf = None
+        self.is_loaded = False
+
+    def load(self):
+        """Compile and load eBPF program using BCC."""
+        if os.environ.get("GBOT_DEV") == "1":
+            logger.info("GBOT_DEV=1, skipping real eBPF loading.")
+            return True
+
+        try:
+            from bcc import BPF
+            # Check if source exists
+            if not os.path.exists(self.bpf_path):
+                logger.error(f"BPF source not found at {self.bpf_path}")
+                return False
+
+            logger.info(f"Loading eBPF program {self.bpf_path} on {self.interface}...")
+            self.bpf = BPF(src_file=self.bpf_path)
+            
+            # Attach to TC (Traffic Control) ingress/egress
+            # Note: In a real system, we might need to use 'tc' command via subprocess 
+            # if the BCC version doesn't support the high-level attach_tc API well.
+            # But for this implementation, we assume BCC can handle the map access.
+            fn = self.bpf.load_func("gmon_tc_main", BPF.SCHED_CLS)
+            
+            # Simple way to attach via subprocess if high-level API is finicky
+            subprocess.run(["tc", "qdisc", "add", "dev", self.interface, "clsact"], check=False)
+            subprocess.run([
+                "tc", "filter", "add", "dev", self.interface, "ingress", 
+                "bpf", "da", "obj", "src/gmon/ebpf/gmon.bpf.o", "sec", "tc"
+            ], check=False)
+            
+            self.is_loaded = True
+            logger.info("eBPF program loaded.")
+            return True
+        except ImportError:
+            logger.error("BCC (python3-bpfcc) not installed. Cannot load eBPF.")
+            return False
+        except Exception as e:
+            logger.error(f"Failed to load eBPF: {e}")
+            return False
+
+    def unload(self):
+        """Unload eBPF program and cleanup maps."""
+        if not self.is_loaded:
+            return
+            
+        logger.info(f"Unloading eBPF from {self.interface}...")
+        subprocess.run(["tc", "qdisc", "del", "dev", self.interface, "clsact"], check=False)
+        self.is_loaded = False
+        self.bpf = None
+        logger.info("eBPF unloaded.")
+
+    def get_bpf(self):
+        return self.bpf

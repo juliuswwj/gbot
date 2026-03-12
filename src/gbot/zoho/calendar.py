@@ -3,7 +3,7 @@ import logging
 import requests
 import json
 from datetime import datetime, timezone, timedelta
-from gbot.zoho_auth import ZohoAuth
+from gbot.zoho.auth import ZohoAuth
 
 logger = logging.getLogger(__name__)
 

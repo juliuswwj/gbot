@@ -3,7 +3,7 @@ import unittest
 import asyncio
 import json
 from unittest.mock import AsyncMock, patch, MagicMock
-from src.gbot.channels.zoho_cliq import ZohoCliqChannel
+from src.gbot.zoho.cliq import ZohoCliqChannel
 
 class TestZohoCliqChannel(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
@@ -20,7 +20,7 @@ class TestZohoCliqChannel(unittest.IsolatedAsyncioTestCase):
         self.config.get_user_language.return_value = "zh_cn"
         
         # Mock ZohoAuth to avoid actual auth attempts
-        with patch('src.gbot.channels.zoho_cliq.ZohoAuth'):
+        with patch('src.gbot.zoho.cliq.ZohoAuth'):
             self.channel = ZohoCliqChannel(self.config, self.brain_callback)
 
     async def _simulate_post(self, data):
@@ -57,7 +57,7 @@ class TestZohoCliqChannel(unittest.IsolatedAsyncioTestCase):
                 args, kwargs = mock_process.call_args
                 self.assertEqual(args[0], "Hello\nWorld")
 
-    @patch('src.gbot.channels.zoho_cliq.logger')
+    @patch('src.gbot.zoho.cliq.logger')
     async def test_send_message_bot_dm(self, mock_logger):
         # When recipient contains @, it should use the /bots endpoint (DM)
         self.channel.auth.get_access_token.return_value = "fake_token"
@@ -74,7 +74,7 @@ class TestZohoCliqChannel(unittest.IsolatedAsyncioTestCase):
             self.assertIn("/bots/test_bot/message", url)
             self.assertEqual(kwargs['json'], {"text": "hello", "userids": "user@example.com"})
 
-    @patch('src.gbot.channels.zoho_cliq.logger')
+    @patch('src.gbot.zoho.cliq.logger')
     async def test_send_message_channel(self, mock_logger):
         # When recipient does NOT contain @, it should use the /chats endpoint
         self.channel.auth.get_access_token.return_value = "fake_token"
@@ -91,7 +91,7 @@ class TestZohoCliqChannel(unittest.IsolatedAsyncioTestCase):
             self.assertIn("/chats/CT_123/message", url)
             self.assertIn("bot_unique_name=test_bot", url)
 
-    @patch('src.gbot.channels.zoho_cliq.logger')
+    @patch('src.gbot.zoho.cliq.logger')
     async def test_webhook_passes_timezone(self, mock_logger):
         # Test that the webhook correctly extracts and passes timezone
         data = {
@@ -117,7 +117,7 @@ class TestZohoCliqChannel(unittest.IsolatedAsyncioTestCase):
                 kwargs = mock_process.call_args.kwargs
                 self.assertEqual(kwargs['timezone'], 'America/Los_Angeles')
 
-    @patch('src.gbot.channels.zoho_cliq.logger')
+    @patch('src.gbot.zoho.cliq.logger')
     async def test_webhook_passes_chat_type(self, mock_logger):
         # Test that the webhook correctly extracts and passes recipient (email for DM)
         data = {
