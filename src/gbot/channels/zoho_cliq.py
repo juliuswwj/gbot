@@ -185,7 +185,7 @@ class ZohoCliqChannel:
                 await asyncio.sleep(3600)
 
     async def send_message(self, content, chat_id=None):
-        """Send a message to Zoho Cliq via v2 API using OAuth."""
+        """Send a message to Zoho Cliq. Handles both Chat/Channel IDs and User DMs."""
         if not chat_id:
             logger.info(f"Zoho Cliq (No Chat ID, logging only): {content}")
             return
@@ -195,23 +195,43 @@ class ZohoCliqChannel:
             logger.error("Failed to get Zoho access token for sending message.")
             return
 
+        bot_name = self.config.bot_unique_name
+
         try:
             if isinstance(content, dict):
                 payload = content
             else:
                 payload = {"text": str(content)}
-                
+
             headers = {
                 "Authorization": f"Zoho-oauthtoken {access_token}",
                 "Content-Type": "application/json"
             }
-            url = f"{self.base_url}/chats/{chat_id}/message"
-            
+
+            # Check if chat_id is a Zoho Chat/Channel ID (usually starts with CT_, etc.)
+            # Or if it's an email/ZUID for a DM.
+            # Zoho Chat IDs for bots usually look like 'CT_...'
+            is_chat = chat_id.startswith("CT_")
+
+            if is_chat:
+                # Endpoint for specific chat (Channel/Group/DM via chat_id)
+                url = f"{self.base_url}/chats/{chat_id}/message"
+                if bot_name:
+                    url += f"?bot_unique_name={bot_name}"
+            else:
+                # Endpoint for sending to user(s) from bot directly
+                # If chat_id is an email, it's a DM.
+                if not bot_name:
+                    logger.error("bot_unique_name missing in config, cannot send DM.")
+                    return
+                url = f"{self.base_url}/bots/{bot_name}/message"
+                payload["userids"] = chat_id # can be email or ZUID
+
             async with aiohttp.ClientSession() as session:
                 async with session.post(url, json=payload, headers=headers) as resp:
-                    if resp.status == 200 or resp.status == 204:
-                        logger.info(f"Successfully sent message to Zoho Cliq chat {chat_id}.")
+                    if resp.status in [200, 204]:
+                        logger.info(f"Successfully sent message to Zoho Cliq {chat_id}.")
                     else:
-                        logger.error(f"Failed to send to Zoho Cliq: {resp.status} {await resp.text()}")
+                        logger.error(f"Failed to send to Zoho Cliq ({chat_id}): {resp.status} {await resp.text()}")
         except Exception as e:
             logger.error(f"Zoho Cliq send error: {e}")

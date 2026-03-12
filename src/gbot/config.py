@@ -50,6 +50,10 @@ class GbotConfig:
     def cron_chat_language(self):
         return self.zoho.get("cron_chat_language", "en_us")
 
+    @property
+    def bot_unique_name(self):
+        return self.zoho.get("bot_unique_name")
+
     def get_user_language(self, email):
         """Get the preferred language for a user by email, default to zh_cn."""
         user = self.get_parent_by_email(email)
