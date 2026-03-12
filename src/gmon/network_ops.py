@@ -147,7 +147,7 @@ class FirewallManager:
             logger.error(f"Iptables error for {ip}: {e}")
 
 class BPFManager:
-    def __init__(self, interface="eth0", bpf_path="src/gmon/ebpf/gmon.bpf.c"):
+    def __init__(self, interface, bpf_path="src/gmon/ebpf/gmon.bpf.c"):
         self.interface = interface
         self.bpf_path = bpf_path
         self.bpf = None

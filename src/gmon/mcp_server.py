@@ -3,6 +3,7 @@ import os
 import json
 import logging
 import grp
+import argparse
 from datetime import date
 from mcp.server import Server
 from gmon.aggregator import TrafficAggregator
@@ -16,12 +17,14 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - gmon - %(message)s
 logger = logging.getLogger("gmon")
 
 app = Server("gmon")
-aggregator = TrafficAggregator()
-dnsmasq = DnsmasqManager()
-firewall = FirewallManager()
-behavior_db = BehaviorDB()
-history_db = HistoryDB()
-bpf_manager = BPFManager()
+
+# Global instances (initialized in main)
+aggregator = None
+dnsmasq = None
+firewall = None
+behavior_db = None
+history_db = None
+bpf_manager = None
 
 # --- Tools Definition ---
 @app.list_tools()
@@ -74,15 +77,28 @@ async def handle_unix_client(reader, writer):
 async def bpf_polling_loop():
     """Periodically pull data from BPF maps."""
     while True:
-        bpf_instance = bpf_manager.get_bpf()
-        if bpf_instance:
-            try:
-                aggregator.process_ebpf_data(bpf_instance)
-            except Exception as e:
-                logger.error(f"Error processing BPF data: {e}")
+        if bpf_manager and aggregator:
+            bpf_instance = bpf_manager.get_bpf()
+            if bpf_instance:
+                try:
+                    aggregator.process_ebpf_data(bpf_instance)
+                except Exception as e:
+                    logger.error(f"Error processing BPF data: {e}")
         await asyncio.sleep(5) # Poll every 5 seconds
 
 async def main():
+    parser = argparse.ArgumentParser(description="gmon MCP Server")
+    parser.add_argument("--interface", default="eth0", help="Network interface to monitor (default: eth0)")
+    args = parser.parse_args()
+
+    global aggregator, dnsmasq, firewall, behavior_db, history_db, bpf_manager
+    aggregator = TrafficAggregator()
+    dnsmasq = DnsmasqManager()
+    firewall = FirewallManager()
+    behavior_db = BehaviorDB()
+    history_db = HistoryDB()
+    bpf_manager = BPFManager(interface=args.interface)
+
     # Priority: ~/.gbot/gmon.sock for dev, /run/gbot/gmon.sock for production
     socket_path = os.path.expanduser("~/.gbot/gmon.sock")
     if os.getuid() == 0:
@@ -114,7 +130,7 @@ async def main():
         logger.warning("Group 'gbot' not found. Defaulting to insecure permissions.")
         os.chmod(socket_path, 0o666)
     
-    logger.info(f"gmon MCP Server listening on {socket_path}")
+    logger.info(f"gmon MCP Server listening on {socket_path}, Interface: {args.interface}")
     
     # 2. Start BPF polling loop
     asyncio.create_task(bpf_polling_loop())
@@ -124,7 +140,8 @@ async def main():
             await server.serve_forever()
     finally:
         # 3. Unload eBPF on exit
-        bpf_manager.unload()
+        if bpf_manager:
+            bpf_manager.unload()
 
 if __name__ == "__main__":
     asyncio.run(main())
